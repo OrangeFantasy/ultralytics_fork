@@ -410,7 +410,7 @@ class v8DetectionLoss:
         # Pboxes
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
 
-        _, target_bboxes, target_scores, fg_mask, target_gt_idx = self.assigner(
+        target_labels, target_bboxes, target_scores, fg_mask, target_gt_idx = self.assigner(
             pred_scores.detach().sigmoid(),
             (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
             anchor_points * stride_tensor,
@@ -442,7 +442,7 @@ class v8DetectionLoss:
         loss[1] *= self.hyp.cls  # cls gain
         loss[2] *= self.hyp.dfl  # dfl gain
         return (
-            (fg_mask, target_gt_idx, target_bboxes, anchor_points, stride_tensor),
+            (fg_mask, target_gt_idx, target_bboxes, target_labels, anchor_points, stride_tensor),
             loss,
             loss.detach(),
         )  # loss(box, cls, dfl)
@@ -485,7 +485,7 @@ class v8SegmentationLoss(v8DetectionLoss):
             proto, pred_semseg = proto
         else:
             pred_semseg = None
-        (fg_mask, target_gt_idx, target_bboxes, _, _), det_loss, _ = self.get_assigned_targets_and_loss(preds, batch)
+        (fg_mask, target_gt_idx, target_bboxes, _, _, _), det_loss, _ = self.get_assigned_targets_and_loss(preds, batch)
         # NOTE: re-assign index for consistency for now. Need to be removed in the future.
         loss[0], loss[2], loss[3] = det_loss[0], det_loss[1], det_loss[2]
 
@@ -632,11 +632,11 @@ class v8PoseLoss(v8DetectionLoss):
         """Calculate the total loss and detach it for pose estimation."""
         pred_kpts = preds["kpts"].permute(0, 2, 1).contiguous()
         loss = torch.zeros(5, device=self.device)  # box, cls, dfl, kpt_location, kpt_visibility
-        (fg_mask, target_gt_idx, target_bboxes, anchor_points, stride_tensor), det_loss, _ = (
+        (fg_mask, target_gt_idx, target_bboxes, _, anchor_points, stride_tensor), det_loss, _ = (
             self.get_assigned_targets_and_loss(preds, batch)
         )
         # NOTE: re-assign index for consistency for now. Need to be removed in the future.
-        loss[0], loss[3], loss[4] = det_loss[0], det_loss[1], det_loss[2]
+        loss[0], loss[1], loss[2] = det_loss[0], det_loss[1], det_loss[2]
 
         batch_size = pred_kpts.shape[0]
         imgsz = torch.tensor(preds["feats"][0].shape[2:], device=self.device, dtype=pred_kpts.dtype) * self.stride[0]
@@ -650,7 +650,7 @@ class v8PoseLoss(v8DetectionLoss):
             keypoints[..., 0] *= imgsz[1]
             keypoints[..., 1] *= imgsz[0]
 
-            loss[1], loss[2] = self.calculate_keypoints_loss(
+            loss[3], loss[4] = self.calculate_keypoints_loss(
                 fg_mask,
                 target_gt_idx,
                 keypoints,
@@ -660,8 +660,8 @@ class v8PoseLoss(v8DetectionLoss):
                 pred_kpts,
             )
 
-        loss[1] *= self.hyp.pose  # pose gain
-        loss[2] *= self.hyp.kobj  # kobj gain
+        loss[3] *= self.hyp.pose  # pose gain
+        loss[4] *= self.hyp.kobj  # kobj gain
 
         return loss * batch_size, loss.detach()  # loss(box, pose, kobj, cls, dfl)
 
@@ -791,11 +791,11 @@ class PoseLoss26(v8PoseLoss):
         """Calculate the total loss and detach it for pose estimation."""
         pred_kpts = preds["kpts"].permute(0, 2, 1).contiguous()
         loss = torch.zeros(6 if self.rle_loss else 5, device=self.device)  # box, cls, dfl, kpt_location, kpt_visibility
-        (fg_mask, target_gt_idx, target_bboxes, anchor_points, stride_tensor), det_loss, _ = (
+        (fg_mask, target_gt_idx, target_bboxes, _, anchor_points, stride_tensor), det_loss, _ = (
             self.get_assigned_targets_and_loss(preds, batch)
         )
         # NOTE: re-assign index for consistency for now. Need to be removed in the future.
-        loss[0], loss[3], loss[4] = det_loss[0], det_loss[1], det_loss[2]
+        loss[0], loss[1], loss[2] = det_loss[0], det_loss[1], det_loss[2]
 
         batch_size = pred_kpts.shape[0]
         imgsz = torch.tensor(batch["resized_shape"][0], device=self.device, dtype=pred_kpts.dtype)  # image size (h,w)
@@ -824,13 +824,13 @@ class PoseLoss26(v8PoseLoss):
                 target_bboxes,
                 pred_kpts,
             )
-            loss[1] = keypoints_loss[0]
-            loss[2] = keypoints_loss[1]
+            loss[3] = keypoints_loss[0]
+            loss[4] = keypoints_loss[1]
             if self.rle_loss is not None:
                 loss[5] = keypoints_loss[2]
 
-        loss[1] *= self.hyp.pose  # pose gain
-        loss[2] *= self.hyp.kobj  # kobj gain
+        loss[3] *= self.hyp.pose  # pose gain
+        loss[4] *= self.hyp.kobj  # kobj gain
         if self.rle_loss is not None:
             loss[5] *= self.hyp.rle  # rle gain
 
@@ -1231,3 +1231,269 @@ class TVPSegmentLoss(TVPDetectLoss):
         vp_loss = self.vp_criterion(preds, batch)
         cls_loss = vp_loss[0][2]
         return cls_loss, vp_loss[1]
+
+
+class v8AngleLoss(v8DetectionLoss):
+    def loss(self, preds: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+        """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
+        pred_angles = preds["angles"].permute(0, 2, 1).contiguous()
+        loss = torch.zeros(4, device=self.device)  # box, cls, dfl
+
+        (fg_mask, target_gt_idx, _, _, _, _), det_loss, _ = (
+            self.get_assigned_targets_and_loss(preds, batch)
+        )
+        # NOTE: re-assign index for consistency for now. Need to be removed in the future.
+        loss[0], loss[1], loss[2] = det_loss[0], det_loss[1], det_loss[2]
+
+        batch_size = pred_angles.shape[0]
+
+        # Bbox loss
+        if fg_mask.sum():
+            angles = batch["angles"].to(self.device).float().clone()
+            loss[3] = self.calculate_angles_loss(
+                fg_mask, 
+                target_gt_idx, 
+                angles, 
+                batch["batch_idx"].view(-1, 1),
+                pred_angles
+            )
+
+        loss[3] *= self.hyp.angle  # angle gain
+
+        return loss * batch_size, loss.detach()  # loss(box, cls, dfl)
+    
+    def _select_target_angles(
+        self,
+        angles: torch.Tensor,
+        batch_idx: torch.Tensor,
+        target_gt_idx: torch.Tensor,
+        masks: torch.Tensor,
+    ):
+        batch_idx = batch_idx.flatten()
+        batch_size = len(masks)
+
+        # Find the maximum number of keypoints in a single image
+        max_objs = torch.unique(batch_idx, return_counts=True)[1].max()
+
+        # Create a tensor to hold batched angles
+        batched_angles = torch.zeros(
+            (batch_size, max_objs, 3), device=angles.device
+        )
+
+        # TODO: any idea how to vectorize this?
+        # Fill batched_angles with keypoints based on batch_idx
+        for i in range(batch_size):
+            angles_i = angles[batch_idx == i]
+            batched_angles[i, :angles_i.shape[0]] = angles_i
+
+        # Expand dimensions of target_gt_idx to match the shape of batched_angles
+        target_gt_idx_expanded = target_gt_idx.unsqueeze(-1)
+
+        # Use target_gt_idx_expanded to select keypoints from batched_angles
+        selected_angles = batched_angles.gather(
+            1, target_gt_idx_expanded.expand(-1, -1, 3)
+        )
+
+        return selected_angles
+
+    def calculate_angles_loss(
+        self,
+        masks: torch.Tensor,
+        target_gt_idx: torch.Tensor,
+        angles: torch.Tensor,
+        batch_idx: torch.Tensor,
+        pred_angles: torch.Tensor,
+    ) -> torch.Tensor:
+        selected_angles = self._select_target_angles(angles, batch_idx, target_gt_idx, masks)
+
+        angles_loss = 0
+
+        if masks.any():
+            gt_angles = selected_angles[masks]
+            pred_angles = pred_angles[masks]
+            
+            mae = torch.abs(pred_angles - gt_angles)
+            l2 = torch.linalg.norm(mae, dim=-1)
+            angles_loss = torch.mean(l2)
+        
+        return angles_loss
+
+
+class Pose26AngleLoss(PoseLoss26, v8AngleLoss):
+    def __init__(self, model, tal_topk: int = 10, tal_topk2: int | None = None):  # model must be de-paralleled
+        super().__init__(model, tal_topk, tal_topk2)
+        self.angle_class = 0
+        self.pose_class = 1
+
+        print(
+            f"\n"
+            f"--------------------------------------------------\n"
+            f"NOTE: Set angle class to {self.angle_class} and set pose class to {self.pose_class}.\n"
+            f"      If need, modify the class label. File: {__file__}, class: {self.__class__.__name__}.\n"
+            f"--------------------------------------------------"
+        )
+
+    def loss(self, preds: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+        """Calculate the total loss and detach it for pose estimation."""
+        pred_kpts = preds["kpts"].permute(0, 2, 1).contiguous()
+        pred_angles = preds["angles"].permute(0, 2, 1).contiguous()
+        loss = torch.zeros(7, device=self.device)  # box, cls, dfl, kpt_location, kpt_visibility
+        (fg_mask, target_gt_idx, target_bboxes, target_labels, anchor_points, stride_tensor), det_loss, _ = (
+            self.get_assigned_targets_and_loss(preds, batch)
+        )
+        # NOTE: re-assign index for consistency for now. Need to be removed in the future.
+        loss[0], loss[1], loss[2] = det_loss[0], det_loss[1], det_loss[2]
+
+        batch_size = pred_kpts.shape[0]
+        imgsz = torch.tensor(batch["resized_shape"][0], device=self.device, dtype=pred_kpts.dtype)  # image size (h,w)
+
+        pred_kpts = pred_kpts.view(batch_size, -1, *self.kpt_shape)  # (b, h*w, 17, 3)
+
+        if self.rle_loss and preds.get("kpts_sigma", None) is not None:
+            pred_sigma = preds["kpts_sigma"].permute(0, 2, 1).contiguous()
+            pred_sigma = pred_sigma.view(batch_size, -1, self.kpt_shape[0], 2)  # (b, h*w, 17, 2)
+            pred_kpts = torch.cat([pred_kpts, pred_sigma], dim=-1)  # (b, h*w, 17, 5)
+
+        pred_kpts = self.kpts_decode(anchor_points, pred_kpts)
+
+        # Bbox loss
+        if fg_mask.sum():
+            batch_idx = batch["batch_idx"].view(-1, 1)
+
+            keypoints = batch["keypoints"].to(self.device).float().clone()
+            keypoints[..., 0] *= imgsz[1]
+            keypoints[..., 1] *= imgsz[0]
+
+            kpts_mask = fg_mask & (target_labels == self.pose_class)
+            keypoints_loss = self.calculate_keypoints_loss(
+                kpts_mask,
+                target_gt_idx,
+                keypoints,
+                batch_idx,
+                stride_tensor,
+                target_bboxes,
+                pred_kpts,
+            )
+            loss[3] = keypoints_loss[0]
+            loss[4] = keypoints_loss[1]
+            if self.rle_loss is not None:
+                loss[5] = keypoints_loss[2]
+
+            angles = batch["angles"].to(self.device).float().clone()
+            angs_mask = fg_mask & (target_labels == self.angle_class)
+            loss[6] = self.calculate_angles_loss(
+                angs_mask, target_gt_idx, angles, batch_idx, pred_angles
+            )
+
+        loss[3] *= self.hyp.pose  # pose gain
+        loss[4] *= self.hyp.kobj  # kobj gain
+        if self.rle_loss is not None:
+            loss[5] *= self.hyp.rle  # rle gain
+        loss[6] *= self.hyp.angle
+
+        return loss * batch_size, loss.detach()  # # loss(box, cls, dfl, kpt_location, kpt_visibility, rle, angle)
+
+
+class MultiHeadLoss(v8DetectionLoss):
+    def __init__(self, model, tal_topk: int = 10, tal_topk2: int | None = None):  # model must be de-paralleled
+        device = next(model.parameters()).device  # get model device
+        h = model.args  # hyperparameters
+        self.hyp = h
+        self.device = device
+
+        m = model.model[-1]
+        self.heads = m.heads
+        self.n_heads = m.n_heads
+        self.nc_per_head = m.nc_per_head
+        self.nc = m.nc
+        self.n_pose_heads = m.n_pose_heads
+        self.kpt_shape = m.kpt_shape
+        self.n_angle_heads = m.n_angle_heads
+        self.n_angles = m.n_angles
+
+        for head_idx in range(self.n_heads):
+            if self.heads[head_idx] == "angle":
+                loss = v8AngleLoss(model)
+            elif self.heads[head_idx] == "pose":
+                loss = PoseLoss26(model, tal_topk=tal_topk, tal_topk2=tal_topk2)
+            elif self.heads[head_idx] == "pose-angle":
+                loss = Pose26AngleLoss(model)
+            else:
+                loss = v8DetectionLoss(model, tal_topk=tal_topk, tal_topk2=tal_topk2)
+            
+            nc = self.nc_per_head[head_idx]
+            loss.nc = nc
+            loss.no = nc + loss.reg_max * 4
+            loss.assigner = TaskAlignedAssigner(topk=10, num_classes=nc, alpha=0.5, beta=6.0)
+            setattr(self, f"loss_{head_idx}", loss)
+            print(
+                f"\n==> branch {head_idx}: loss={loss.__class__.__name__}, "
+                f"topk={loss.assigner.topk}, topk2={loss.assigner.topk2}, tal_alpha={loss.assigner.alpha}, tal_beta={loss.assigner.beta}", 
+                end=""
+            )
+
+        import itertools
+        cs = [0] + list(itertools.accumulate(self.nc_per_head))
+        self.class_ranges = [[cs[i], cs[i + 1] - 1] for i in range(len(self.nc_per_head))]
+
+    def loss(self, preds: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+        loss = torch.zeros((self.n_heads, 7), device=self.device)
+        loss_item = torch.zeros((self.n_heads, 7), device=self.device)  # box, cls, dfl, pose, kobj, angle
+
+        boxes_per_head  = list(preds["boxes"].chunk(self.n_heads, dim=1))
+        scores_per_head = list(preds["scores"].split(self.nc_per_head, dim=1))
+        kpts_per_head   = list(preds["kpts"].chunk(self.n_pose_heads, dim=1))
+        kpts_sigma_per_head = None
+        if preds.get("kpts_sigma", None) is not None:
+            kpts_sigma_per_head = list(preds["kpts_sigma"].chunk(self.n_pose_heads, dim=1))
+        angles_per_head = list(preds["angles"].chunk(self.n_angle_heads, dim=1))
+        
+        for head_idx in reversed(range(self.n_heads)):
+            class_start, class_end = self.class_ranges[head_idx]
+            class_mask = ((batch["cls"] >= class_start) & (batch["cls"] <= class_end)).view(-1)
+            sub_batch = {
+                "batch_idx": batch["batch_idx"][class_mask],
+                "cls": batch["cls"][class_mask] - class_start,
+                "bboxes": batch["bboxes"][class_mask],
+                "resized_shape": batch['resized_shape']
+            }
+            sub_preds = {
+                "feats": preds["feats"],
+                "boxes": boxes_per_head.pop(),
+                "scores": scores_per_head.pop(),
+            }
+
+            curr_head = self.heads[head_idx]
+            if curr_head == "angle":
+                sub_batch["angles"] = batch["angles"][class_mask]
+                sub_preds["angles"] = angles_per_head.pop()
+            elif curr_head == "pose":
+                sub_batch["keypoints"] = batch["keypoints"][class_mask]
+                sub_preds["kpts"] = kpts_per_head.pop()
+                if kpts_sigma_per_head is not None:
+                    sub_preds["kpts_sigma"] = kpts_sigma_per_head.pop()
+            elif curr_head == "pose-angle":
+                sub_batch["angles"] = batch["angles"][class_mask]
+                sub_batch["keypoints"] = batch["keypoints"][class_mask]
+                sub_preds["angles"] = angles_per_head.pop()
+                sub_preds["kpts"] = kpts_per_head.pop()
+                if kpts_sigma_per_head is not None:
+                    sub_preds["kpts_sigma"] = kpts_sigma_per_head.pop()
+
+            sub_loss, sub_loss_item = getattr(self, f"loss_{head_idx}").loss(sub_preds, sub_batch)
+            loss_item[head_idx, 0:3] = sub_loss_item[0:3]
+            loss[head_idx, 0:3] = sub_loss[0:3]
+
+            if curr_head == "angle":
+                loss_item[head_idx, 6] = sub_loss_item[3]
+                loss[head_idx, 6] = sub_loss[3]
+            elif curr_head == "pose":
+                loss_item[head_idx, 3:6] = sub_loss_item[3:6]
+                loss[head_idx, 3:6] = sub_loss[3:6]
+            elif curr_head == "pose-angle":
+                loss_item[head_idx, 3:7] = sub_loss_item[3:7]
+                loss[head_idx, 3:7] = sub_loss[3:7]
+
+        assert len(boxes_per_head) == len(scores_per_head) == len(kpts_per_head) == len(angles_per_head) == 0
+        assert kpts_sigma_per_head is None or (len(kpts_sigma_per_head) == 0)
+        return loss.sum(dim=0), loss_item.sum(dim=0)

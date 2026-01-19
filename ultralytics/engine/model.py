@@ -605,7 +605,7 @@ class Model(torch.nn.Module):
             >>> results = model.val(data="coco8.yaml", imgsz=640)
             >>> print(results.box.map)  # Print mAP50-95
         """
-        custom = {"rect": True}  # method defaults
+        custom = {"rect": False}  # method defaults
         args = {**self.overrides, **custom, **kwargs, "mode": "val"}  # highest priority args on the right
 
         validator = (validator or self._smart_load("validator"))(args=args, _callbacks=self.callbacks)
@@ -745,6 +745,8 @@ class Model(torch.nn.Module):
             >>> model = YOLO("yolo26n.pt")
             >>> results = model.train(data="coco8.yaml", epochs=3)
         """
+        model_state_dict = kwargs.pop("state_dict", None)
+
         self._check_is_pytorch_model()
         if hasattr(self.session, "model") and self.session.model.id:  # Ultralytics HUB session with loaded model
             if any(kwargs):
@@ -758,7 +760,7 @@ class Model(torch.nn.Module):
         overrides = YAML.load(checks.check_yaml(kwargs["cfg"])) if kwargs.get("cfg") else self.overrides
         custom = {
             # NOTE: handle the case when 'cfg' includes 'data'.
-            "data": overrides.get("data") or DEFAULT_CFG_DICT["data"] or TASK2DATA[self.task],
+            "data": overrides.get("data") or DEFAULT_CFG_DICT["data"] or kwargs.get("data") or TASK2DATA[self.task],
             "model": self.overrides["model"],
             "task": self.task,
         }  # method defaults
@@ -771,6 +773,18 @@ class Model(torch.nn.Module):
             self.trainer.model = self.trainer.get_model(weights=self.model if self.ckpt else None, cfg=self.model.yaml)
             self.model = self.trainer.model
 
+        if RANK in {-1, 0} and model_state_dict:
+            from ultralytics.utils.torch_utils import intersect_dicts, unwrap_model
+            unwarp_state_dict = unwrap_model(self.model).state_dict()
+            unexcepted_keys = set(model_state_dict.keys()) - set(unwarp_state_dict.keys())
+            cleaned_state_dict = intersect_dicts(model_state_dict, unwarp_state_dict)
+            missing_keys, _ = unwrap_model(self.model).load_state_dict(cleaned_state_dict, strict=False)
+            if missing_keys:
+                LOGGER.info(f"==> Missing keys: {missing_keys}")
+            if unexcepted_keys:
+                LOGGER.info(f"==> Unexpected keys: {unexcepted_keys}")
+
+        self.trainer.hub_session = self.session  # attach optional HUB session
         self.trainer.train()
         # Update model and cfg after training
         if RANK in {-1, 0}:

@@ -197,6 +197,8 @@ class BaseDataset(Dataset):
                 bboxes = self.labels[i]["bboxes"]
                 segments = self.labels[i]["segments"]
                 keypoints = self.labels[i]["keypoints"]
+                angles = self.labels[i]["angles"]
+                extra_props = self.labels[i]["extra_props"]
                 j = (cls == include_class_array).any(1)
                 self.labels[i]["cls"] = cls[j]
                 self.labels[i]["bboxes"] = bboxes[j]
@@ -204,6 +206,10 @@ class BaseDataset(Dataset):
                     self.labels[i]["segments"] = [segments[si] for si, idx in enumerate(j) if idx]
                 if keypoints is not None:
                     self.labels[i]["keypoints"] = keypoints[j]
+                if angles is not None:
+                    self.labels[i]["angles"] = angles[j]
+                if extra_props is not None:
+                    self.labels[i]["extra_props"] = extra_props[j]
             if self.single_cls:
                 self.labels[i]["cls"][:, 0] = 0
 
@@ -238,12 +244,12 @@ class BaseDataset(Dataset):
 
             h0, w0 = im.shape[:2]  # orig hw
             if rect_mode:  # resize long side to imgsz while maintaining aspect ratio
-                r = self.imgsz / max(h0, w0)  # ratio
+                r = min(self.imgsz[0] / h0, self.imgsz[1] / w0)
                 if r != 1:  # if sizes are not equal
-                    w, h = (min(math.ceil(w0 * r), self.imgsz), min(math.ceil(h0 * r), self.imgsz))
+                    w, h = (min(math.ceil(w0 * r), self.imgsz[1]), min(math.ceil(h0 * r), self.imgsz[0]))
                     im = cv2.resize(im, (w, h), interpolation=cv2.INTER_LINEAR)
-            elif not (h0 == w0 == self.imgsz):  # resize by stretching image to square imgsz
-                im = cv2.resize(im, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
+            elif not ((h0 == self.imgsz[0]) and (w0 == self.imgsz[1])):  # resize by stretching image to square imgsz
+                im = cv2.resize(im, (self.imgsz[1], self.imgsz[0]), interpolation=cv2.INTER_LINEAR)
             if im.ndim == 2:
                 im = im[..., None]
 
@@ -332,7 +338,7 @@ class BaseDataset(Dataset):
             im = imread(random.choice(self.im_files))  # sample image
             if im is None:
                 continue
-            ratio = self.imgsz / max(im.shape[0], im.shape[1])  # max(h, w)  # ratio
+            ratio = max(self.imgsz[0] / im.shape[0], self.imgsz[1] / im.shape[1])
             b += im.nbytes * ratio**2
         mem_required = b * self.ni / n * (1 + safety_margin)  # GB required to cache dataset into RAM
         mem = __import__("psutil").virtual_memory()
@@ -368,7 +374,7 @@ class BaseDataset(Dataset):
             elif mini > 1:
                 shapes[i] = [1, 1 / mini]
 
-        self.batch_shapes = np.ceil(np.array(shapes) * self.imgsz / self.stride + self.pad).astype(int) * self.stride
+        self.batch_shapes = np.ceil(np.array(shapes) * np.array(self.imgsz) / self.stride + self.pad).astype(int) * self.stride
         self.batch = bi  # batch index of image
 
     def __getitem__(self, index: int) -> dict[str, Any]:

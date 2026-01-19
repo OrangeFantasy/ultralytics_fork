@@ -72,6 +72,7 @@ from ultralytics.nn.modules import (
     YOLOESegment,
     YOLOESegment26,
     v10Detect,
+    MultiHead,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, LOGGER, YAML, colorstr, emojis
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -83,6 +84,7 @@ from ultralytics.utils.loss import (
     v8OBBLoss,
     v8PoseLoss,
     v8SegmentationLoss,
+    MultiHeadLoss,
 )
 from ultralytics.utils.ops import make_divisible
 from ultralytics.utils.patches import torch_load
@@ -1301,6 +1303,12 @@ class Ensemble(torch.nn.ModuleList):
         return y, None  # inference, train output
 
 
+class MultiHeadModel(PoseModel):
+    def init_criterion(self):
+        """Initialize the loss criterion for the PoseModel."""
+        return E2ELoss(self, MultiHeadLoss) if getattr(self, "end2end", False) else MultiHeadLoss(self)
+
+
 # Functions ------------------------------------------------------------------------------------------------------------
 
 
@@ -1665,12 +1673,13 @@ def parse_model(d, ch, verbose=True):
                 Pose26,
                 OBB,
                 OBB26,
+                MultiHead,
             }
         ):
             args.extend([reg_max, end2end, [ch[x] for x in f]])
             if m is Segment or m is YOLOESegment or m is Segment26 or m is YOLOESegment26:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
-            if m in {Detect, YOLOEDetect, Segment, Segment26, YOLOESegment, YOLOESegment26, Pose, Pose26, OBB, OBB26}:
+            if m in {Detect, YOLOEDetect, Segment, Segment26, YOLOESegment, YOLOESegment26, Pose, Pose26, OBB, OBB26, MultiHead}:
                 m.legacy = legacy
         elif m is v10Detect:
             args.append([ch[x] for x in f])
@@ -1790,6 +1799,8 @@ def guess_model_task(model):
                 return "obb"
             elif isinstance(m, (Detect, WorldDetect, YOLOEDetect, v10Detect)):
                 return "detect"
+            elif isinstance(m, MultiHead):
+                return "multi-head"
 
     # Guess from model filename
     if isinstance(model, (str, Path)):

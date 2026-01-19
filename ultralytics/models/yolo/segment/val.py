@@ -76,7 +76,7 @@ class SegmentationValidator(DetectionValidator):
 
     def get_desc(self) -> str:
         """Return a formatted description of evaluation metrics."""
-        return ("%22s" + "%11s" * 10) % (
+        return ("%20s" + "%10s" * 10) % (
             "Class",
             "Images",
             "Instances",

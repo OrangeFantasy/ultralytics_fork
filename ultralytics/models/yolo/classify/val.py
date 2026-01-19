@@ -70,7 +70,7 @@ class ClassificationValidator(BaseValidator):
 
     def get_desc(self) -> str:
         """Return a formatted string summarizing classification metrics."""
-        return ("%22s" + "%11s" * 2) % ("classes", "top1_acc", "top5_acc")
+        return ("%20s" + "%10s" * 2) % ("classes", "top1_acc", "top5_acc")
 
     def init_metrics(self, model: torch.nn.Module) -> None:
         """Initialize confusion matrix, class names, and tracking containers for predictions and targets."""
@@ -165,7 +165,7 @@ class ClassificationValidator(BaseValidator):
 
     def print_results(self) -> None:
         """Print evaluation metrics for the classification model."""
-        pf = "%22s" + "%11.3g" * len(self.metrics.keys)  # print format
+        pf = "%20s" + "%10.3g" * len(self.metrics.keys)  # print format
         LOGGER.info(pf % ("all", self.metrics.top1, self.metrics.top5))
 
     def plot_val_samples(self, batch: dict[str, Any], ni: int) -> None:

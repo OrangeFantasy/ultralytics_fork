@@ -81,8 +81,9 @@ class YOLODataset(BaseDataset):
             **kwargs (Any): Additional keyword arguments for the parent class.
         """
         self.use_segments = task == "segment"
-        self.use_keypoints = task == "pose"
+        self.use_keypoints = (task == "pose") or (task == "pose-angle")
         self.use_obb = task == "obb"
+        self.use_angles = task == "pose-angle"
         self.data = data
         assert not (self.use_segments and self.use_keypoints), "Can not use both segments and keypoints."
         super().__init__(*args, channels=self.data.get("channels", 3), **kwargs)
@@ -101,6 +102,8 @@ class YOLODataset(BaseDataset):
         desc = f"{self.prefix}Scanning {path.parent / path.stem}..."
         total = len(self.im_files)
         nkpt, ndim = self.data.get("kpt_shape", (0, 0))
+        n_angles = self.data.get("n_angles", 0)
+        n_extra_props = self.data.get("n_extra_props", 0)
         if self.use_keypoints and (nkpt <= 0 or ndim not in {2, 3}):
             raise ValueError(
                 "'kpt_shape' in data.yaml missing or incorrect. Should be a list with [number of "
@@ -114,14 +117,17 @@ class YOLODataset(BaseDataset):
                     self.label_files,
                     repeat(self.prefix),
                     repeat(self.use_keypoints),
+                    repeat(self.use_angles),
                     repeat(len(self.data["names"])),
                     repeat(nkpt),
                     repeat(ndim),
+                    repeat(n_angles),
+                    repeat(n_extra_props),
                     repeat(self.single_cls),
                 ),
             )
             pbar = TQDM(results, desc=desc, total=total)
-            for im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg in pbar:
+            for im_file, lb, shape, segments, keypoint, angle, extra_props, nm_f, nf_f, ne_f, nc_f, msg in pbar:
                 nm += nm_f
                 nf += nf_f
                 ne += ne_f
@@ -135,6 +141,8 @@ class YOLODataset(BaseDataset):
                             "bboxes": lb[:, 1:],  # n, 4
                             "segments": segments,
                             "keypoints": keypoint,
+                            "angles": angle,
+                            "extra_props": extra_props,
                             "normalized": True,
                             "bbox_format": "xywh",
                         }
@@ -218,18 +226,19 @@ class YOLODataset(BaseDataset):
             hyp.cutmix = hyp.cutmix if self.augment and not self.rect else 0.0
             transforms = v8_transforms(self, self.imgsz, hyp)
         else:
-            transforms = Compose([LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False)])
+            transforms = Compose([LetterBox(new_shape=self.imgsz, scaleup=False)])
         transforms.append(
             Format(
                 bbox_format="xywh",
                 normalize=True,
                 return_mask=self.use_segments,
                 return_keypoint=self.use_keypoints,
+                return_angles=self.use_angles,
                 return_obb=self.use_obb,
                 batch_idx=True,
                 mask_ratio=hyp.mask_ratio,
                 mask_overlap=hyp.overlap_mask,
-                bgr=hyp.bgr if self.augment else 0.0,  # only affect training.
+                rgb=hyp.rgb if self.augment else 0.0,  # only affect training.
             )
         )
         return transforms
@@ -262,6 +271,8 @@ class YOLODataset(BaseDataset):
         bboxes = label.pop("bboxes")
         segments = label.pop("segments", [])
         keypoints = label.pop("keypoints", None)
+        angles = label.pop("angles", None)
+        extra_props = label.pop("extra_props", None)
         bbox_format = label.pop("bbox_format")
         normalized = label.pop("normalized")
 
@@ -275,7 +286,7 @@ class YOLODataset(BaseDataset):
             segments = np.stack(resample_segments(segments, n=segment_resamples), axis=0)
         else:
             segments = np.zeros((0, segment_resamples, 2), dtype=np.float32)
-        label["instances"] = Instances(bboxes, segments, keypoints, bbox_format=bbox_format, normalized=normalized)
+        label["instances"] = Instances(bboxes, segments, keypoints, angles, extra_props, bbox_format=bbox_format, normalized=normalized)
         return label
 
     @staticmethod
@@ -298,7 +309,7 @@ class YOLODataset(BaseDataset):
                 value = torch.stack(value, 0)
             elif k == "visuals":
                 value = torch.nn.utils.rnn.pad_sequence(value, batch_first=True)
-            if k in {"masks", "keypoints", "bboxes", "cls", "segments", "obb"}:
+            if k in {"masks", "keypoints", "bboxes", "cls", "segments", "obb", "angles", "extra_props"}:
                 value = torch.cat(value, 0)
             new_batch[k] = value
         new_batch["batch_idx"] = list(new_batch["batch_idx"])

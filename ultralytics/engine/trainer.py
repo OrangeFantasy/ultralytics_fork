@@ -200,7 +200,7 @@ class BaseTrainer:
         self.csv = self.save_dir / "results.csv"
         if self.csv.exists() and not self.args.resume:
             self.csv.unlink()
-        self.plot_idx = [0, 1, 2]
+        self.plot_idx = [0, 1, 2, 3, 4]
         self.nan_recovery_attempts = 0
 
     def add_callback(self, event: str, callback):
@@ -312,7 +312,7 @@ class BaseTrainer:
 
         # Check imgsz
         gs = max(int(self.model.stride.max() if hasattr(self.model, "stride") else 32), 32)  # grid size (max stride)
-        self.args.imgsz = check_imgsz(self.args.imgsz, stride=gs, floor=gs, max_dim=1)
+        self.args.imgsz = check_imgsz(self.args.imgsz, stride=gs, floor=gs, max_dim=2)
         self.stride = gs  # for multiscale training
 
         # Batch size
@@ -372,7 +372,7 @@ class BaseTrainer:
         self.train_time_start = time.time()
         self.run_callbacks("on_train_start")
         LOGGER.info(
-            f"Image sizes {self.args.imgsz} train, {self.args.imgsz} val\n"
+            f"Image sizes {self.args.imgsz[0]} x {self.args.imgsz[1]} train, {self.args.imgsz[0]} x {self.args.imgsz[1]} val\n"
             f"Using {self.train_loader.num_workers * (self.world_size or 1)} dataloader workers\n"
             f"Logging results to {colorstr('bold', self.save_dir)}\n"
             f"Starting training for " + (f"{self.args.time} hours..." if self.args.time else f"{self.epochs} epochs...")
@@ -481,8 +481,14 @@ class BaseTrainer:
                 self.ema.update_attr(self.model, include=["yaml", "nc", "args", "names", "stride", "class_weights"])
 
             # Validation
+            val_period = int(os.environ.get("__global_args__val_period", 1))
+            val_last_epochs = int(os.environ.get("__global_args__val_last_epochs", 1))
+            val_epoch = (
+                epoch == 0  or ((epoch + 1) % val_period == 0) 
+                or (epoch >= self.epochs - val_last_epochs)
+            )
             final_epoch = epoch + 1 >= self.epochs
-            if self.args.val or final_epoch or self.stopper.possible_stop or self.stop:
+            if self.args.val and (val_epoch or final_epoch or self.stopper.possible_stop or self.stop):
                 self._clear_memory(threshold=0.5)  # prevent VRAM spike
                 self.metrics, self.fitness = self.validate()
 

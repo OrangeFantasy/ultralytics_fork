@@ -15,7 +15,7 @@ from ultralytics.utils.torch_utils import autocast, profile_ops
 
 def check_train_batch_size(
     model: torch.nn.Module,
-    imgsz: int = 640,
+    imgsz: list[int] = [640, 640],
     amp: bool = True,
     batch: int | float = -1,
     max_num_obj: int = 1,
@@ -44,7 +44,7 @@ def check_train_batch_size(
 
 def autobatch(
     model: torch.nn.Module,
-    imgsz: int = 640,
+    imgsz: list[int] = [640, 640],
     fraction: float = 0.60,
     batch_size: int = DEFAULT_CFG.batch,
     max_num_obj: int = 1,
@@ -63,7 +63,7 @@ def autobatch(
     """
     # Check device
     prefix = colorstr("AutoBatch: ")
-    LOGGER.info(f"{prefix}Computing optimal batch size for imgsz={imgsz} at {fraction * 100}% CUDA memory utilization.")
+    LOGGER.info(f"{prefix}Computing optimal batch size for imgsz={imgsz[0]}x{imgsz[1]} at {fraction * 100}% CUDA memory utilization.")
     device = next(model.parameters()).device  # get model device
     if device.type in {"cpu", "mps"}:
         LOGGER.warning(f"{prefix}intended for CUDA devices, using default batch-size {batch_size}")
@@ -85,7 +85,7 @@ def autobatch(
     # Profile batch sizes
     batch_sizes = [1, 2, 4, 8, 16] if t < 16 else [1, 2, 4, 8, 16, 32, 64]
     try:
-        img = [torch.empty(b, 3, imgsz, imgsz) for b in batch_sizes]
+        img = [torch.empty(b, 3, imgsz[0], imgsz[1]) for b in batch_sizes]
         results = profile_ops(img, model, n=1, device=device, max_num_obj=max_num_obj)
 
         # Fit a solution

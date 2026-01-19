@@ -484,7 +484,7 @@ class Mosaic(BaseMixTransform):
         >>> augmented_labels = mosaic_aug(original_labels)
     """
 
-    def __init__(self, dataset, imgsz: int = 640, p: float = 1.0, n: int = 4):
+    def __init__(self, dataset, imgsz: int | list[int] = 640, p: float = 1.0, n: int = 4):
         """Initialize the Mosaic augmentation object.
 
         This class performs mosaic augmentation by combining multiple (4 or 9) images into a single mosaic image. The
@@ -499,8 +499,9 @@ class Mosaic(BaseMixTransform):
         assert 0 <= p <= 1.0, f"The probability should be in range [0, 1], but got {p}."
         assert n in {4, 9}, "grid must be equal to 4 or 9."
         super().__init__(dataset=dataset, p=p)
+        imgsz = (imgsz, imgsz) if isinstance(imgsz, int) else tuple(imgsz)
         self.imgsz = imgsz
-        self.border = (-imgsz // 2, -imgsz // 2)  # width, height
+        self.border = (-imgsz[0] // 2, -imgsz[1] // 2)  # height, width
         self.n = n
         self.buffer_enabled = self.dataset.cache != "ram"
 
@@ -588,13 +589,13 @@ class Mosaic(BaseMixTransform):
 
             # Place img in img3
             if i == 0:  # center
-                img3 = np.full((s * 3, s * 3, img.shape[2]), 114, dtype=np.uint8)  # base image with 3 tiles
+                img3 = np.full((s[0] * 3, s[1] * 3, img.shape[2]), 114, dtype=np.uint8)  # base image with 3 tiles
                 h0, w0 = h, w
-                c = s, s, s + w, s + h  # xmin, ymin, xmax, ymax (base) coordinates
+                c = s[1], s[0], s[1] + w, s[0] + h  # xmin, ymin, xmax, ymax (base) coordinates
             elif i == 1:  # right
-                c = s + w0, s, s + w0 + w, s + h
+                c = s[1] + w0, s[0], s[1] + w0 + w, s[0] + h
             elif i == 2:  # left
-                c = s - w, s + h0 - h, s, s + h0
+                c = s[1] - w, s[0] + h0 - h, s[1], s[0] + h0
 
             padw, padh = c[:2]
             x1, y1, x2, y2 = (max(x, 0) for x in c)  # allocate coordinates
@@ -636,7 +637,7 @@ class Mosaic(BaseMixTransform):
         """
         mosaic_labels = []
         s = self.imgsz
-        yc, xc = (int(random.uniform(-x, 2 * s + x)) for x in self.border)  # mosaic center x, y
+        yc, xc = (int(random.uniform(-x, 2 * sx + x)) for x, sx in zip(self.border, s))  # mosaic center x, y
         for i in range(4):
             labels_patch = labels if i == 0 else labels["mix_labels"][i - 1]
             # Load image
@@ -645,17 +646,17 @@ class Mosaic(BaseMixTransform):
 
             # Place img in img4
             if i == 0:  # top left
-                img4 = np.full((s * 2, s * 2, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
+                img4 = np.full((s[0] * 2, s[1] * 2, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
                 x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc  # xmin, ymin, xmax, ymax (large image)
                 x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h  # xmin, ymin, xmax, ymax (small image)
             elif i == 1:  # top right
-                x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s * 2), yc
+                x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s[1] * 2), yc
                 x1b, y1b, x2b, y2b = 0, h - (y2a - y1a), min(w, x2a - x1a), h
             elif i == 2:  # bottom left
-                x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(s * 2, yc + h)
+                x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(s[0] * 2, yc + h)
                 x1b, y1b, x2b, y2b = w - (x2a - x1a), 0, w, min(y2a - y1a, h)
             elif i == 3:  # bottom right
-                x1a, y1a, x2a, y2a = xc, yc, min(xc + w, s * 2), min(s * 2, yc + h)
+                x1a, y1a, x2a, y2a = xc, yc, min(xc + w, s[1] * 2), min(s[0] * 2, yc + h)
                 x1b, y1b, x2b, y2b = 0, 0, min(w, x2a - x1a), min(y2a - y1a, h)
 
             img4[y1a:y2a, x1a:x2a] = img[y1b:y2b, x1b:x2b]  # img4[ymin:ymax, xmin:xmax]
@@ -705,25 +706,25 @@ class Mosaic(BaseMixTransform):
 
             # Place img in img9
             if i == 0:  # center
-                img9 = np.full((s * 3, s * 3, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
+                img9 = np.full((s[0] * 3, s[1] * 3, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
                 h0, w0 = h, w
-                c = s, s, s + w, s + h  # xmin, ymin, xmax, ymax (base) coordinates
+                c = s[1], s[0], s[1] + w, s[0] + h  # xmin, ymin, xmax, ymax (base) coordinates
             elif i == 1:  # top
-                c = s, s - h, s + w, s
+                c = s[1], s[0] - h, s[1] + w, s[0]
             elif i == 2:  # top right
-                c = s + wp, s - h, s + wp + w, s
+                c = s[1] + wp, s[0] - h, s[1] + wp + w, s[0]
             elif i == 3:  # right
-                c = s + w0, s, s + w0 + w, s + h
+                c = s[1] + w0, s[0], s[1] + w0 + w, s[0] + h
             elif i == 4:  # bottom right
-                c = s + w0, s + hp, s + w0 + w, s + hp + h
+                c = s[1] + w0, s[0] + hp, s[1] + w0 + w, s[0] + hp + h
             elif i == 5:  # bottom
-                c = s + w0 - w, s + h0, s + w0, s + h0 + h
+                c = s[1] + w0 - w, s[0] + h0, s[1] + w0, s[0] + h0 + h
             elif i == 6:  # bottom left
-                c = s + w0 - wp - w, s + h0, s + w0 - wp, s + h0 + h
+                c = s[1] + w0 - wp - w, s[0] + h0, s[1] + w0 - wp, s[0] + h0 + h
             elif i == 7:  # left
-                c = s - w, s + h0 - h, s, s + h0
+                c = s[1] + w0 - w, s[0] + h0 - h, s[1] + w0, s[0] + h0
             elif i == 8:  # top left
-                c = s - w, s + h0 - hp - h, s, s + h0 - hp
+                c = s[1] - w, s[0] + h0 - hp - h, s[1], s[0] + h0 - hp
 
             padw, padh = c[:2]
             x1, y1, x2, y2 = (max(x, 0) for x in c)  # allocate coordinates
@@ -796,7 +797,7 @@ class Mosaic(BaseMixTransform):
             return {}
         cls = []
         instances = []
-        imgsz = self.imgsz * 2  # mosaic imgsz
+        imgsz = [self.imgsz[0] * 2, self.imgsz[1] * 2]  # mosaic imgsz
         for labels in mosaic_labels:
             cls.append(labels["cls"])
             instances.append(labels["instances"])
@@ -804,12 +805,12 @@ class Mosaic(BaseMixTransform):
         final_labels = {
             "im_file": mosaic_labels[0]["im_file"],
             "ori_shape": mosaic_labels[0]["ori_shape"],
-            "resized_shape": (imgsz, imgsz),
+            "resized_shape": imgsz,
             "cls": np.concatenate(cls, 0),
             "instances": Instances.concatenate(instances, axis=0),
             "mosaic_border": self.border,
         }
-        final_labels["instances"].clip(imgsz, imgsz)
+        final_labels["instances"].clip(w=imgsz[1], h=imgsz[0])
         good = final_labels["instances"].remove_zero_area_boxes()
         final_labels["cls"] = final_labels["cls"][good]
         if "texts" in mosaic_labels[0]:
@@ -1282,7 +1283,7 @@ class RandomPerspective:
 
         if keypoints is not None:
             keypoints = self.apply_keypoints(keypoints, M)
-        new_instances = Instances(bboxes, segments, keypoints, bbox_format="xyxy", normalized=False)
+        new_instances = Instances(bboxes, segments, keypoints, instances.angles, instances.extra_props, bbox_format="xyxy", normalized=False)
         # Clip
         new_instances.clip(*self.size)
 
@@ -1990,11 +1991,12 @@ class Format:
         normalize: bool = True,
         return_mask: bool = False,
         return_keypoint: bool = False,
+        return_angles: bool = False,
         return_obb: bool = False,
         mask_ratio: int = 4,
         mask_overlap: bool = True,
         batch_idx: bool = True,
-        bgr: float = 0.0,
+        rgb: float = 0.0,
     ):
         """Initialize the Format class with given parameters for image and instance annotation formatting.
 
@@ -2010,17 +2012,18 @@ class Format:
             mask_ratio (int): Downsample ratio for masks.
             mask_overlap (bool): If True, allows mask overlap.
             batch_idx (bool): If True, keeps batch indexes.
-            bgr (float): Probability of returning BGR images instead of RGB.
+            rgb (float): Probability of returning RGB images instead of BGR.
         """
         self.bbox_format = bbox_format
         self.normalize = normalize
         self.return_mask = return_mask  # set False when training detection only
         self.return_keypoint = return_keypoint
+        self.return_angles = return_angles
         self.return_obb = return_obb
         self.mask_ratio = mask_ratio
         self.mask_overlap = mask_overlap
         self.batch_idx = batch_idx  # keep the batch indexes
-        self.bgr = bgr
+        self.rgb = rgb
 
     def __call__(self, labels: dict[str, Any]) -> dict[str, Any]:
         """Format image annotations for object detection, instance segmentation, and pose estimation tasks.
@@ -2088,6 +2091,12 @@ class Format:
             labels["bboxes"] = (
                 xyxyxyxy2xywhr(torch.from_numpy(instances.segments)) if len(instances.segments) else torch.zeros((0, 5))
             )
+        if self.return_angles:
+            labels["angles"] = (
+                torch.empty(0, 3) if instances.angles is None else torch.from_numpy(instances.angles)
+            )
+        if instances.extra_props is not None:
+            labels["extra_props"] = torch.from_numpy(instances.extra_props)
         # NOTE: need to normalize obb in xywhr format for width-height consistency
         if self.normalize:
             labels["bboxes"][:, [0, 2]] /= w
@@ -2123,7 +2132,7 @@ class Format:
         if len(img.shape) < 3:
             img = img[..., None]
         img = img.transpose(2, 0, 1)
-        img = np.ascontiguousarray(img[::-1] if random.uniform(0, 1) > self.bgr and img.shape[0] == 3 else img)
+        img = np.ascontiguousarray(img[::-1] if random.uniform(0, 1) < self.rgb and img.shape[0] == 3 else img)  # bgr is rgb
         img = torch.from_numpy(img)
         return img
 
@@ -2413,7 +2422,7 @@ def v8_transforms(dataset, imgsz: int, hyp: IterableSimpleNamespace, stretch: bo
         scale=hyp.scale,
         shear=hyp.shear,
         perspective=hyp.perspective,
-        pre_transform=None if stretch else LetterBox(new_shape=(imgsz, imgsz)),
+        pre_transform=None if stretch else LetterBox(new_shape=imgsz),
     )
 
     pre_transform = Compose([mosaic, affine])
@@ -2442,7 +2451,7 @@ def v8_transforms(dataset, imgsz: int, hyp: IterableSimpleNamespace, stretch: bo
             pre_transform,
             MixUp(dataset, pre_transform=pre_transform, p=hyp.mixup),
             CutMix(dataset, pre_transform=pre_transform, p=hyp.cutmix),
-            Albumentations(p=1.0, transforms=getattr(hyp, "augmentations", None)),
+            Albumentations(p=hyp.albumentations, transforms=getattr(hyp, "augmentations", None)),
             RandomHSV(hgain=hyp.hsv_h, sgain=hyp.hsv_s, vgain=hyp.hsv_v),
             RandomFlip(direction="vertical", p=hyp.flipud, flip_idx=flip_idx),
             RandomFlip(direction="horizontal", p=hyp.fliplr, flip_idx=flip_idx),

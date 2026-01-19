@@ -1766,3 +1766,237 @@ class v10Detect(Detect):
     def fuse(self):
         """Remove the one2many head for inference optimization."""
         self.cv2 = self.cv3 = None
+
+
+class MultiHead(Pose26):
+    export_function = None
+    quantization_function = None
+
+    def __init__(
+        self, 
+        nc: int, 
+        heads: tuple, 
+        nc_per_head: list, 
+        kpt_shape: tuple = (17, 3), 
+        n_angles: int = 3, 
+        reg_max: int = 1,
+        end2end: bool = False,
+        ch: tuple = ()
+    ):
+        nn.Module.__init__(self)
+        self.heads = heads
+        self.n_heads = len(self.heads)
+        self.nc_per_head = nc_per_head
+
+        self.nc = nc  # number of classes
+        assert self.nc == sum(nc_per_head), f"number of classes must be sum of {nc_per_head}"
+        self.nl = len(ch)  # number of detection layers
+        self.reg_max = reg_max  # DFL channels (ch[0] // 16 to scale 4/8/12/16/20 for n/s/m/l/x)
+        self.no = nc + self.reg_max * 4  # number of outputs per anchor
+        self.stride = torch.zeros(self.nl)  # strides computed during build
+
+        c2 = max(16, ch[0] // 4, self.reg_max * 4)
+        c3 = max(ch[0] // 4, min(max(nc_per_head), 100))  # channels
+        self.cv2 = nn.ModuleList(
+            nn.ModuleList(
+                nn.Sequential(Conv(x, c2, 3), Conv(c2, c2, 3), nn.Conv2d(c2, 4 * self.reg_max, 1)) 
+                for x in ch
+            )
+            for i in range(self.n_heads)
+        )
+        self.cv3 = nn.ModuleList(
+            nn.ModuleList(
+                nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, nc_per_head[i], 1)) 
+                for x in ch
+            )
+            for i in range(self.n_heads)
+        )
+        self.dfl = nn.Identity()     
+
+        if end2end:
+            self.one2one_cv2 = copy.deepcopy(self.cv2)
+            self.one2one_cv3 = copy.deepcopy(self.cv3)
+
+        # For pose estimation
+        self.n_pose_heads = len([x for x in self.heads if x in ["pose", "pose-angle"]])
+        assert self.n_pose_heads == 1, "must have pose or pose-angle head and the number of pose heads must be 1."     
+        self.kpt_shape = kpt_shape  # number of keypoints, number of dims (2 for x,y or 3 for x,y,visible)
+        self.nk = kpt_shape[0] * kpt_shape[1]  # number of keypoints total
+
+        self.flow_model = RealNVP()
+
+        c4 = max(ch[0] // 4, kpt_shape[0] * (kpt_shape[1] + 2))
+        self.cv4 = nn.ModuleList(nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3)) for x in ch)
+
+        self.cv4_kpts = nn.ModuleList(nn.Conv2d(c4, self.nk, 1) for _ in ch)
+        self.nk_sigma = kpt_shape[0] * 2  # sigma_x, sigma_y for each keypoint
+        self.cv4_sigma = nn.ModuleList(nn.Conv2d(c4, self.nk_sigma, 1) for _ in ch)
+
+        if end2end:
+            self.one2one_cv4 = copy.deepcopy(self.cv4)
+            self.one2one_cv4_kpts = copy.deepcopy(self.cv4_kpts)
+            self.one2one_cv4_sigma = copy.deepcopy(self.cv4_sigma)
+
+        # For angle estimation
+        self.n_angle_heads = len([x for x in self.heads if x in ["angle", "pose-angle"]])
+        assert self.n_angle_heads >= 1, "must have angle or pose-angle head."
+        assert n_angles == 3, "Now only support 3 angles."
+
+        self.n_angles = n_angles
+        c5 = max(ch[0] // 4, self.n_angles)
+
+        self.cv5 = nn.ModuleList(
+            nn.ModuleList(
+                nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, self.n_angles, 1)) 
+                for x in ch
+            )
+            for i in range(self.n_angle_heads)
+        )
+
+        if end2end:
+            self.one2one_cv5 = copy.deepcopy(self.cv5)
+
+    @property
+    def one2many(self):
+        return dict(
+            box_head=self.cv2,
+            cls_head=self.cv3,
+            pose_head=self.cv4,
+            kpts_head=self.cv4_kpts,
+            kpts_sigma_head=self.cv4_sigma,
+            angle_head=self.cv5
+        )
+
+    @property
+    def one2one(self):
+        return dict(
+            box_head=self.one2one_cv2,
+            cls_head=self.one2one_cv3,
+            pose_head=self.one2one_cv4,
+            kpts_head=self.one2one_cv4_kpts,
+            kpts_sigma_head=self.one2one_cv4_sigma,
+            angle_head=self.one2one_cv5
+        )
+
+    def forward_head(
+        self,
+        x: list[torch.Tensor],
+        box_head: torch.nn.Module,
+        cls_head: torch.nn.Module,
+        pose_head: torch.nn.Module,
+        kpts_head: torch.nn.Module,
+        kpts_sigma_head: torch.nn.Module,
+        angle_head: torch.nn.Module,
+    ) -> torch.Tensor:
+        preds = self._Detect_forward_head(x, box_head, cls_head)
+        if pose_head is not None:
+            bs = x[0].shape[0]  # batch size
+            features = [pose_head[i](x[i]) for i in range(self.nl)]
+            preds["kpts"] = torch.cat([
+                kpts_head[i](features[i]).view(bs, self.nk, -1) for i in range(self.nl)
+            ], dim=2)
+            if self.training:
+                preds["kpts_sigma"] = torch.cat([
+                    kpts_sigma_head[i](features[i]).view(bs, self.nk_sigma, -1) 
+                    for i in range(self.nl)
+                ], dim=2)
+        if angle_head is not None:
+            bs = x[0].shape[0]  # batch size
+            angles = []
+            for head_idx in range(self.n_angle_heads):
+                angles.append(
+                    torch.cat([
+                        angle_head[head_idx][i](x[i]).view(bs, self.n_angles, -1)
+                        for i in range(self.nl)
+                    ], dim=2)
+                )
+            preds["angles"] = torch.cat(angles, dim=1)
+        return preds
+
+    def _Detect_forward_head(
+        self, x: list[torch.Tensor], box_head: torch.nn.Module = None, cls_head: torch.nn.Module = None
+    ) -> dict[str, torch.Tensor]:
+        """Concatenates and returns predicted bounding boxes and class probabilities."""
+        if box_head is None or cls_head is None:  # for fused inference
+            return dict()
+        bs = x[0].shape[0]  # batch size
+        boxes, scores = [], []
+        for head_idx in range(self.n_heads):
+            boxes.append(
+                torch.cat([
+                    box_head[head_idx][i](x[i]).view(bs, 4 * self.reg_max, -1)
+                    for i in range(self.nl)
+                ], dim=-1)
+            )
+            scores.append(
+                torch.cat([
+                    cls_head[head_idx][i](x[i]).view(bs, self.nc_per_head[head_idx], -1)
+                    for i in range(self.nl)
+                ], dim=-1)
+            )
+        return dict(boxes=torch.cat(boxes, dim=1), scores=torch.cat(scores, dim=1), feats=x)
+
+    def bias_init(self):
+        """Initialize Detect() biases, WARNING: requires stride availability."""
+        for head_idx in range(self.n_heads):
+            for i, (a, b) in enumerate(zip(self.one2many["box_head"][head_idx], self.one2many["cls_head"][head_idx])):  # from
+                a[-1].bias.data[:] = 2.0  # box
+                b[-1].bias.data[: self.nc] = math.log(
+                    5 / self.nc / (640 / self.stride[i]) ** 2
+                )  # cls (.01 objects, 80 classes, 640 img)
+            if self.end2end:
+                for i, (a, b) in enumerate(zip(self.one2one["box_head"][head_idx], self.one2one["cls_head"][head_idx])):  # from
+                    a[-1].bias.data[:] = 2.0  # box
+                    b[-1].bias.data[: self.nc] = math.log(
+                        5 / self.nc / (640 / self.stride[i]) ** 2
+                    )  # cls (.01 objects, 80 classes, 640 img)
+
+    def _inference(self, x: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Decode predicted bounding boxes and class probabilities, concatenated with keypoints."""
+        preds = super()._inference(x)
+        return torch.cat([preds, x["angles"]], dim=1)
+
+    def decode_bboxes(self, bboxes: torch.Tensor, anchors: torch.Tensor, xywh: bool = True) -> torch.Tensor:
+        bboxes_per_head = []
+        for bboxes_chunked in bboxes.chunk(self.n_heads, 1):
+            bboxes_per_head.append(Detect.decode_bboxes(self, bboxes_chunked, anchors, xywh))
+        return torch.cat(bboxes_per_head, dim=1)
+
+    def postprocess(self, preds: torch.Tensor) -> torch.Tensor:
+        """Post-process YOLO model predictions.
+
+        Args:
+            preds (torch.Tensor): Raw predictions with shape (batch_size, num_anchors, 4 * nh + nc + nk + na * nah) with last dimension
+                format [(x, y, w, h) * nh, class_probs, keypoints, angles * num_angle_heads].
+
+        Returns:
+            (torch.Tensor): Processed predictions with shape (batch_size, min(max_det, num_anchors), 6 + self.nk) and
+                last dimension format [x, y, w, h, max_class_prob, class_index, keypoints, angles].
+        """
+        boxes_splited, scores_splited, kpts_splited, angles_splited = preds.split(
+            [4 * self.n_heads, self.nc, self.nk * self.n_pose_heads, self.n_angles * self.n_angle_heads], dim=-1
+        )
+
+        boxes_splited  = list(torch.chunk(boxes_splited, self.n_heads, dim=-1))
+        scores_splited = list(torch.split(scores_splited, self.nc, dim=-1))
+        kpts_splited   = list(torch.chunk(kpts_splited, self.n_pose_heads, dim=-1))
+        angles_splited = list(torch.chunk(angles_splited, self.n_angle_heads, dim=-1))
+        
+        results = []
+        for head_idx in reversed(range(self.n_heads)):
+            scores, conf, idx = self.get_topk_index(scores_splited.pop(), self.max_det)
+            boxes = boxes_splited.pop().gather(dim=1, index=idx.repeat(1, 1, 4))
+            if self.heads[head_idx] in ["pose", "pose-angle"]:
+                kpts = kpts_splited.pop().gather(dim=1, index=idx.repeat(1, 1, self.nk))
+            else:
+                kpts = torch.zeros([boxes.shape[0], boxes.shape[1], self.nk], device=boxes.device)
+            if self.heads[head_idx] in ["angle", "pose-angle"]:
+                angles = angles_splited.pop().gather(dim=1, index=idx.repeat(1, 1, self.n_angles))
+            else:
+                angles = torch.zeros([boxes.shape[0], boxes.shape[1], self.n_angles], device=boxes.device)
+            results.append(torch.cat([boxes, scores, conf, kpts, angles], dim=-1))
+        return torch.cat(results, dim=0)
+    
+    def fuse(self):
+        super().fuse()
+        self.cv5 = None

@@ -19,6 +19,7 @@ from ultralytics.nn.tasks import (
     WorldModel,
     YOLOEModel,
     YOLOESegModel,
+    MultiHeadModel,
 )
 from ultralytics.utils import ROOT, YAML
 
@@ -115,6 +116,12 @@ class YOLO(Model):
                 "validator": yolo.obb.OBBValidator,
                 "predictor": yolo.obb.OBBPredictor,
             },
+            "multi-head": {
+                "model": MultiHeadModel,
+                "trainer": yolo.multi_head.MultiHeadTrainer,
+                "validator": yolo.multi_head.MultiHeadValidator,
+                "predictor": yolo.multi_head.MultiHeadPredictor,
+            }
         }
 
 

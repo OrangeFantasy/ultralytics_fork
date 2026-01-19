@@ -104,7 +104,7 @@ dfl: 1.5 # (float) distribution focal loss gain
 pose: 12.0 # (float) pose loss gain (pose tasks)
 kobj: 1.0 # (float) keypoint objectness loss gain (pose tasks)
 rle: 1.0 # (float) rle loss gain (pose tasks)
-angle: 1.0 # (float) oriented angle loss gain (obb tasks)
+angle: 1.0 # (float) oriented angle loss gain (obb tasks or angle tasks)
 nbs: 64 # (int) nominal batch size used for loss normalization
 hsv_h: 0.015 # (float) HSV hue augmentation fraction
 hsv_s: 0.7 # (float) HSV saturation augmentation fraction
@@ -116,7 +116,7 @@ shear: 0.0 # (float) shear degrees (+/-)
 perspective: 0.0 # (float) perspective fraction (0–0.001 typical)
 flipud: 0.0 # (float) vertical flip probability
 fliplr: 0.5 # (float) horizontal flip probability
-bgr: 0.0 # (float) RGB↔BGR channel swap probability
+rgb: 0.0 # (float) BGR↔RGB channel swap probability
 mosaic: 1.0 # (float) mosaic augmentation probability
 mixup: 0.0 # (float) MixUp augmentation probability
 cutmix: 0.0 # (float) CutMix augmentation probability
@@ -124,6 +124,7 @@ copy_paste: 0.0 # (float) segmentation copy-paste probability
 copy_paste_mode: flip # (str) copy-paste strategy for segmentation: flip or mixup
 auto_augment: randaugment # (str) classification auto augmentation policy: randaugment, autoaugment, augmix
 erasing: 0.4 # (float) random erasing probability for classification (0–0.9), <1.0
+albumentations: 0.0 # (float) probability of albumentations augmentation (0-1.0), 0 means no albumentations
 
 # Custom config.yaml ---------------------------------------------------------------------------------------------------
 cfg: # (str, optional) path to a config.yaml that overrides defaults

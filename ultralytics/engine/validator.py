@@ -122,7 +122,7 @@ class BaseValidator:
         (self.save_dir / "labels" if self.args.save_txt else self.save_dir).mkdir(parents=True, exist_ok=True)
         if self.args.conf is None:
             self.args.conf = 0.01 if self.args.task == "obb" else 0.001  # reduce OBB val memory usage
-        self.args.imgsz = check_imgsz(self.args.imgsz, max_dim=1)
+        self.args.imgsz = check_imgsz(self.args.imgsz, max_dim=2)
 
         self.plots = {}
         self.callbacks = _callbacks or callbacks.get_default_callbacks()
@@ -188,7 +188,7 @@ class BaseValidator:
             model.eval()
             if self.args.compile:
                 model = attempt_compile(model, device=self.device)
-            model.warmup(imgsz=(1 if pt else self.args.batch, self.data["channels"], imgsz, imgsz))  # warmup
+            model.warmup(imgsz=(1 if pt else self.args.batch, self.data["channels"], imgsz[0], imgsz[1]))  # warmup
 
         self.run_callbacks("on_val_start")
         dt = (
@@ -255,9 +255,7 @@ class BaseValidator:
                 )
             )
             if self.args.save_json and self.jdict:
-                with open(str(self.save_dir / "predictions.json"), "w", encoding="utf-8") as f:
-                    LOGGER.info(f"Saving {f.name}...")
-                    json.dump(self.jdict, f)  # flatten and save
+                self.save_json()
                 stats = self.eval_json(stats)  # update stats
             if self.args.plots or self.args.save_json:
                 LOGGER.info(f"Results saved to {colorstr('bold', self.save_dir)}")
@@ -381,6 +379,11 @@ class BaseValidator:
     def pred_to_json(self, preds, batch):
         """Convert predictions to JSON format."""
         pass
+
+    def save_json(self):                
+        with open(str(self.save_dir / "predictions.json"), "w", encoding="utf-8") as f:
+            LOGGER.info(f"Saving {f.name}...")
+            json.dump(self.jdict, f)  # flatten and save
 
     def eval_json(self, stats):
         """Evaluate and return JSON format of prediction statistics."""

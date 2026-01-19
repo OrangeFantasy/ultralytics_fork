@@ -44,8 +44,21 @@ FORMATS_HELP_MSG = f"Supported formats are:\nimages: {IMG_FORMATS}\nvideos: {VID
 
 def img2label_paths(img_paths: list[str]) -> list[str]:
     """Convert image paths to label paths by replacing 'images' with 'labels' and extension with '.txt'."""
-    sa, sb = f"{os.sep}images{os.sep}", f"{os.sep}labels{os.sep}"  # /images/, /labels/ substrings
-    return [sb.join(x.rsplit(sa, 1)).rsplit(".", 1)[0] + ".txt" for x in img_paths]
+    custom_sa = os.environ.get("__global_args__img2label_paths_sa", "").strip("/")
+    custom_sb = os.environ.get("__global_args__img2label_paths_sb", "").strip("/")
+
+    paths = []
+    for x in img_paths:
+        sa, sb = f"{os.sep}images{os.sep}", f"{os.sep}labels{os.sep}"  # /images/, /labels/ substrings
+
+        if custom_sa != "" and custom_sa in x:
+            sa = f"{os.sep}{custom_sa}{os.sep}"
+            if custom_sb != "":  # If custom_sb is provided, replace custom_sa with custom_sb, otherwise replace with "/labels/".
+                sb = f"{os.sep}{custom_sb}{os.sep}"
+
+        x = sb.join(x.rsplit(sa, 1)).rsplit(".", 1)[0] + ".txt"
+        paths.append(x)
+    return paths
 
 
 def check_file_speeds(
@@ -179,9 +192,9 @@ def verify_image(args: tuple) -> tuple:
 
 def verify_image_label(args: tuple) -> list:
     """Verify one image-label pair."""
-    im_file, lb_file, prefix, keypoint, num_cls, nkpt, ndim, single_cls = args
+    im_file, lb_file, prefix, keypoint, angle, num_cls, nkpt, ndim, n_angles, n_extra_props, single_cls = args
     # Number (missing, found, empty, corrupt), message, segments, keypoints
-    nm, nf, ne, nc, msg, segments, keypoints = 0, 0, 0, 0, "", [], None
+    nm, nf, ne, nc, msg, segments, keypoints, angles, extra_props = 0, 0, 0, 0, "", [], None, None, None
     try:
         # Verify images
         im = Image.open(im_file)
@@ -209,8 +222,9 @@ def verify_image_label(args: tuple) -> list:
                 lb = np.array(lb, dtype=np.float32)
             if nl := len(lb):
                 if keypoint:
-                    assert lb.shape[1] == (5 + nkpt * ndim), f"labels require {(5 + nkpt * ndim)} columns each"
-                    points = lb[:, 5:].reshape(-1, ndim)[:, :2]
+                    assert lb.shape[1] == (5 + nkpt * ndim + n_angles * n_extra_props), \
+                        f"labels require {(5 + nkpt * ndim + n_angles * n_extra_props)} columns each"
+                    points = lb[:, 5 + n_angles: 5 + n_angles + nkpt * ndim].reshape(-1, ndim)[:, :2]
                 else:
                     assert lb.shape[1] == 5, f"labels require 5 columns, {lb.shape[1]} columns detected"
                     points = lb[:, 1:]
@@ -232,21 +246,25 @@ def verify_image_label(args: tuple) -> list:
                     msg = f"{prefix}{im_file}: {nl - len(i)} duplicate labels removed"
             else:
                 ne = 1  # label empty
-                lb = np.zeros((0, (5 + nkpt * ndim) if keypoint else 5), dtype=np.float32)
+                lb = np.zeros((0, (5 + nkpt * ndim + n_angles * n_extra_props) if keypoint else 5), dtype=np.float32)
         else:
             nm = 1  # label missing
-            lb = np.zeros((0, (5 + nkpt * ndim) if keypoint else 5), dtype=np.float32)
+            lb = np.zeros((0, (5 + nkpt * ndim + n_angles * n_extra_props) if keypoints else 5), dtype=np.float32)
         if keypoint:
-            keypoints = lb[:, 5:].reshape(-1, nkpt, ndim)
+            keypoints = lb[:, 5 + n_angles: 5 + n_angles + nkpt * ndim].reshape(-1, nkpt, ndim)
             if ndim == 2:
                 kpt_mask = np.where((keypoints[..., 0] < 0) | (keypoints[..., 1] < 0), 0.0, 1.0).astype(np.float32)
                 keypoints = np.concatenate([keypoints, kpt_mask[..., None]], axis=-1)  # (nl, nkpt, 3)
+        if angle:
+            angles = lb[:, 5: 5 + n_angles].reshape(-1, n_angles)
+        if n_extra_props > 0:
+            extra_props = lb[:, 5 + n_angles + nkpt * ndim:].reshape(-1, n_extra_props)
         lb = lb[:, :5]
-        return im_file, lb, shape, segments, keypoints, nm, nf, ne, nc, msg
+        return im_file, lb, shape, segments, keypoints, angles, extra_props, nm, nf, ne, nc, msg
     except Exception as e:
         nc = 1
         msg = f"{prefix}{im_file}: ignoring corrupt image/label: {e}"
-        return [None, None, None, None, None, nm, nf, ne, nc, msg]
+        return [None, None, None, None, None, None, None, nm, nf, ne, nc, msg]
 
 
 def visualize_image_annotations(image_path: str, txt_path: str, label_map: dict[int, str]):

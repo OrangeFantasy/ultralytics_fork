@@ -218,6 +218,8 @@ class Instances:
         bboxes: np.ndarray,
         segments: np.ndarray = None,
         keypoints: np.ndarray = None,
+        angles: np.ndarray = None,
+        extra_props: np.ndarray = None,
         bbox_format: str = "xywh",
         normalized: bool = True,
     ) -> None:
@@ -234,6 +236,8 @@ class Instances:
         self.keypoints = keypoints
         self.normalized = normalized
         self.segments = segments
+        self.angles = angles
+        self.extra_props = extra_props
 
     def convert_bbox(self, format: str) -> None:
         """Convert bounding box format.
@@ -329,12 +333,16 @@ class Instances:
         """
         segments = self.segments[index] if len(self.segments) else self.segments
         keypoints = self.keypoints[index] if self.keypoints is not None else None
+        angles = self.angles[index] if self.angles is not None else None
+        extra_props = self.extra_props[index] if self.extra_props is not None else None
         bboxes = self.bboxes[index]
         bbox_format = self._bboxes.format
         return Instances(
             bboxes=bboxes,
             segments=segments,
             keypoints=keypoints,
+            angles=angles,
+            extra_props=extra_props,
             bbox_format=bbox_format,
             normalized=self.normalized,
         )
@@ -345,6 +353,7 @@ class Instances:
         Args:
             h (int): Image height.
         """
+        assert self.angles is None, "Not supported angles for flipud. Must be sure `flipud=0.0`."
         if self._bboxes.format == "xyxy":
             y1 = self.bboxes[:, 1].copy()
             y2 = self.bboxes[:, 3].copy()
@@ -372,6 +381,8 @@ class Instances:
         self.segments[..., 0] = w - self.segments[..., 0]
         if self.keypoints is not None:
             self.keypoints[..., 0] = w - self.keypoints[..., 0]
+        if self.angles is not None:
+            self.angles[..., 1:3] = 1 - self.angles[..., 1:3]
 
     def clip(self, w: int, h: int) -> None:
         """Clip coordinates to stay within image boundaries.
@@ -412,21 +423,31 @@ class Instances:
                 self.segments = self.segments[good]
             if self.keypoints is not None:
                 self.keypoints = self.keypoints[good]
+            if self.angles is not None:
+                self.angles = self.angles[good]
+            if self.extra_props is not None:
+                self.extra_props = self.extra_props[good]
         return good
 
-    def update(self, bboxes: np.ndarray, segments: np.ndarray = None, keypoints: np.ndarray = None):
+    def update(self, bboxes: np.ndarray, segments: np.ndarray = None, keypoints: np.ndarray = None, angles: np.ndarray = None, extra_props: np.ndarray = None):
         """Update instance variables.
 
         Args:
             bboxes (np.ndarray): New bounding boxes.
             segments (np.ndarray, optional): New segments.
             keypoints (np.ndarray, optional): New keypoints.
+            angles (np.ndarray, optional): New angles.
+            extra_props (np.ndarray, optional): New extra properties.
         """
         self._bboxes = Bboxes(bboxes, format=self._bboxes.format)
         if segments is not None:
             self.segments = segments
         if keypoints is not None:
             self.keypoints = keypoints
+        if angles is not None:
+            self.angles = angles
+        if extra_props is not None:
+            self.extra_props = extra_props
 
     def __len__(self) -> int:
         """Return the number of instances."""
@@ -457,6 +478,8 @@ class Instances:
             return instances_list[0]
 
         use_keypoint = instances_list[0].keypoints is not None
+        use_angles = instances_list[0].angles is not None
+        use_extra_props = instances_list[0].extra_props is not None
         bbox_format = instances_list[0]._bboxes.format
         normalized = instances_list[0].normalized
 
@@ -476,7 +499,9 @@ class Instances:
         else:
             cat_segments = np.concatenate([b.segments for b in instances_list], axis=axis)
         cat_keypoints = np.concatenate([b.keypoints for b in instances_list], axis=axis) if use_keypoint else None
-        return cls(cat_boxes, cat_segments, cat_keypoints, bbox_format, normalized)
+        cat_angles = np.concatenate([b.angles for b in instances_list], axis=axis) if use_angles else None
+        cat_extra_props = np.concatenate([b.extra_props for b in instances_list], axis=axis) if use_extra_props else None
+        return cls(cat_boxes, cat_segments, cat_keypoints, cat_angles, cat_extra_props, bbox_format, normalized)
 
     @property
     def bboxes(self) -> np.ndarray:
