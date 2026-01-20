@@ -155,7 +155,7 @@ class ClassificationTrainer(BaseTrainer):
 
     def progress_string(self) -> str:
         """Return a formatted string showing training progress."""
-        return ("\n" + "%11s" * (4 + len(self.loss_names))) % (
+        return ("\n" + "%10s" * (4 + len(self.loss_names))) % (
             "Epoch",
             "GPU_mem",
             *self.loss_names,

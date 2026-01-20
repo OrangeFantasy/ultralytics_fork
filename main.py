@@ -71,6 +71,8 @@ if __name__ == "__main__":
     elif args.nkpts == 19:
         loss.OKS_SIGMA = _OKS_SIGMA[args.nkpts]
         os.environ["__global_args__oks_sigma"] = np.array2string(loss.OKS_SIGMA)
+        class_ranges = np.array([[0, 0], [1, 5], [2, 3], [4, 5], [6, 6], [7, 10]], dtype=np.int32)
+        os.environ["__global_args__multi_head_class_ranges"] = np.array2string(class_ranges.reshape(-1))
         # os.environ["__global_args__CUSTOM_CLASS_RANGE"] = "1"
         # os.environ["__global_args__img2label_paths_sb"] = "yuanchengzhi/datasets/multi_task_datasets/trainval/trainval_multi_task_with_action_labels/add_face_modify_raisehand_v1_19kpts"
         os.environ["__global_args__img2label_paths_sa"] = "zhaolixiang/dataset/multi_task_dataset/trainval/trainval_multi_task_with_action_labels/images"

@@ -1871,14 +1871,30 @@ class Albumentations:
 
             # Transforms, use custom transforms if provided, otherwise use defaults
             T = (
+                # [
+                #     A.Blur(p=0.01),
+                #     A.MedianBlur(p=0.01),
+                #     A.ToGray(p=0.01),
+                #     A.CLAHE(p=0.01),
+                #     A.RandomBrightnessContrast(p=0.0),
+                #     A.RandomGamma(p=0.0),
+                #     A.ImageCompression(quality_range=(75, 100), p=0.0),
+                # ]
                 [
-                    A.Blur(p=0.01),
-                    A.MedianBlur(p=0.01),
-                    A.ToGray(p=0.01),
-                    A.CLAHE(p=0.01),
-                    A.RandomBrightnessContrast(p=0.0),
-                    A.RandomGamma(p=0.0),
-                    A.ImageCompression(quality_range=(75, 100), p=0.0),
+                    A.OneOf([
+                        A.Blur(blur_limit=(3, 7)),
+                        A.MotionBlur(blur_limit=5),
+                    ], p=0.15),
+                    A.OneOf([
+                        A.GaussNoise(),
+                        A.ISONoise(),
+                    ], p=0.2),
+                    A.ToGray(p=0.0),
+                    A.CLAHE(p=0.1),
+                    A.RandomBrightnessContrast((-0.2, 0.2), (-0.2, 0.2), p=0.2),
+                    A.HueSaturationValue((-15, 15), (-25, 25), (-15, 15), p=0.2),
+                    A.RandomGamma((80, 120), p=0.15),
+                    A.ImageCompression(quality_range=(75, 100), p=0.2),
                 ]
                 if transforms is None
                 else transforms

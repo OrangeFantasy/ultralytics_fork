@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import math
+import os
 from typing import Any
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -623,9 +625,12 @@ class v8PoseLoss(v8DetectionLoss):
         super().__init__(model, tal_topk, tal_topk2)
         self.kpt_shape = model.model[-1].kpt_shape
         self.bce_pose = nn.BCEWithLogitsLoss()
-        is_pose = self.kpt_shape == [17, 3]
-        nkpt = self.kpt_shape[0]  # number of keypoints
-        sigmas = torch.from_numpy(OKS_SIGMA).to(self.device) if is_pose else torch.ones(nkpt, device=self.device) / nkpt
+        # is_pose = self.kpt_shape == [17, 3]
+        # nkpt = self.kpt_shape[0]  # number of keypoints
+        # sigmas = torch.from_numpy(OKS_SIGMA).to(self.device) if is_pose else torch.ones(nkpt, device=self.device) / nkpt
+        oks_sigma = np.fromstring(os.environ.get("__global_args__oks_sigma", np.array2string(OKS_SIGMA)).strip("[]"), sep=" ")
+        print("\n==> OKS_SIGMA", oks_sigma.tolist(), end="")
+        sigmas = torch.from_numpy(oks_sigma).to(self.device) # if is_pose else torch.ones(nkpt, device=self.device) / nkpt
         self.keypoint_loss = KeypointLoss(sigmas=sigmas)
 
     def loss(self, preds: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
@@ -1432,9 +1437,23 @@ class MultiHeadLoss(v8DetectionLoss):
                 end=""
             )
 
-        import itertools
-        cs = [0] + list(itertools.accumulate(self.nc_per_head))
-        self.class_ranges = [[cs[i], cs[i + 1] - 1] for i in range(len(self.nc_per_head))]
+        if os.environ.get("__global_args__multi_head_class_ranges", None):
+            class_ranges = np.fromstring(os.environ["__global_args__multi_head_class_ranges"].strip("[]"), dtype=np.int32, sep=" ").reshape(-1, 2)
+            self.class_ranges = class_ranges.tolist()
+            print(
+                f"\n"
+                f"--------------------------------------------------\n"
+                f"==> NOTE: Set custome class range to calculate loss:\n"
+                f"    {self.class_ranges}\n"
+                f"    If need, modify the class label. File: {__file__}, class: {self.__class__.__name__}.\n"
+                f"--------------------------------------------------"
+            )
+        else:
+            import itertools
+            cs = [0] + list(itertools.accumulate(self.nc_per_head))
+            self.class_ranges = [[cs[i], cs[i + 1] - 1] for i in range(len(self.nc_per_head))]
+
+        # NOTE: The class of pose head is always 0.
 
     def loss(self, preds: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
         loss = torch.zeros((self.n_heads, 7), device=self.device)
@@ -1468,6 +1487,7 @@ class MultiHeadLoss(v8DetectionLoss):
                 sub_batch["angles"] = batch["angles"][class_mask]
                 sub_preds["angles"] = angles_per_head.pop()
             elif curr_head == "pose":
+                sub_batch["cls"] = torch.zeros_like(sub_batch["cls"])  # NOTE: cls of pose head is always 0
                 sub_batch["keypoints"] = batch["keypoints"][class_mask]
                 sub_preds["kpts"] = kpts_per_head.pop()
                 if kpts_sigma_per_head is not None:

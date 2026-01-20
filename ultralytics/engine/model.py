@@ -745,7 +745,7 @@ class Model(torch.nn.Module):
             >>> model = YOLO("yolo26n.pt")
             >>> results = model.train(data="coco8.yaml", epochs=3)
         """
-        model_state_dict = kwargs.pop("state_dict", None)
+        loaded_state_dict = kwargs.pop("state_dict", None)
 
         self._check_is_pytorch_model()
         if hasattr(self.session, "model") and self.session.model.id:  # Ultralytics HUB session with loaded model
@@ -773,16 +773,22 @@ class Model(torch.nn.Module):
             self.trainer.model = self.trainer.get_model(weights=self.model if self.ckpt else None, cfg=self.model.yaml)
             self.model = self.trainer.model
 
-        if RANK in {-1, 0} and model_state_dict:
+        if RANK in {-1, 0} and loaded_state_dict:
             from ultralytics.utils.torch_utils import intersect_dicts, unwrap_model
-            unwarp_state_dict = unwrap_model(self.model).state_dict()
-            unexcepted_keys = set(model_state_dict.keys()) - set(unwarp_state_dict.keys())
-            cleaned_state_dict = intersect_dicts(model_state_dict, unwarp_state_dict)
-            missing_keys, _ = unwrap_model(self.model).load_state_dict(cleaned_state_dict, strict=False)
+            from ultralytics.utils import colorstr
+
+            model_state_dict = unwrap_model(self.model).state_dict()
+            unexcepted_keys = set(loaded_state_dict.keys()) - set(model_state_dict.keys())
+            matched_state_dict = intersect_dicts(loaded_state_dict, model_state_dict)
+            unmatched_keys = set(loaded_state_dict.keys()) - set(matched_state_dict.keys())
+            missing_keys, _ = unwrap_model(self.model).load_state_dict(matched_state_dict, strict=False)
+
             if missing_keys:
-                LOGGER.info(f"==> Missing keys: {missing_keys}")
+                LOGGER.info(f"{colorstr('red', 'bold', '==> Missing keys:')} {missing_keys}")
             if unexcepted_keys:
-                LOGGER.info(f"==> Unexpected keys: {unexcepted_keys}")
+                LOGGER.info(f"{colorstr('red', 'bold', '==> Unexpected keys:')} {unexcepted_keys}")
+            if unmatched_keys:
+                LOGGER.info(f"{colorstr('red', 'bold', '==> Unmatched keys:')} {unmatched_keys}")
 
         self.trainer.hub_session = self.session  # attach optional HUB session
         self.trainer.train()
