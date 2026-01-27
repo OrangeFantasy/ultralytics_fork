@@ -1769,6 +1769,7 @@ class v10Detect(Detect):
 
 
 class MultiHead(Pose26):
+    rle = True
     export_function = None
     quantization_function = None
 
@@ -1823,14 +1824,16 @@ class MultiHead(Pose26):
         self.kpt_shape = kpt_shape  # number of keypoints, number of dims (2 for x,y or 3 for x,y,visible)
         self.nk = kpt_shape[0] * kpt_shape[1]  # number of keypoints total
 
-        self.flow_model = RealNVP()
-
-        c4 = max(ch[0] // 4, kpt_shape[0] * (kpt_shape[1] + 2))
+        # c4 = max(ch[0] // 4, kpt_shape[0] * (kpt_shape[1] + 2))  # Pose26
+        c4 = max(ch[0] // 4, self.nk)
         self.cv4 = nn.ModuleList(nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3)) for x in ch)
-
         self.cv4_kpts = nn.ModuleList(nn.Conv2d(c4, self.nk, 1) for _ in ch)
-        self.nk_sigma = kpt_shape[0] * 2  # sigma_x, sigma_y for each keypoint
-        self.cv4_sigma = nn.ModuleList(nn.Conv2d(c4, self.nk_sigma, 1) for _ in ch)
+        if self.rle:
+            self.nk_sigma = kpt_shape[0] * 2  # sigma_x, sigma_y for each keypoint
+            self.cv4_sigma = nn.ModuleList(nn.Conv2d(c4, self.nk_sigma, 1) for _ in ch)
+            self.flow_model = RealNVP()
+        else:
+            self.cv4_sigma = None
 
         if end2end:
             self.one2one_cv4 = copy.deepcopy(self.cv4)
@@ -1895,7 +1898,7 @@ class MultiHead(Pose26):
             preds["kpts"] = torch.cat([
                 kpts_head[i](features[i]).view(bs, self.nk, -1) for i in range(self.nl)
             ], dim=2)
-            if self.training:
+            if self.rle and self.training:
                 preds["kpts_sigma"] = torch.cat([
                     kpts_sigma_head[i](features[i]).view(bs, self.nk_sigma, -1) 
                     for i in range(self.nl)
