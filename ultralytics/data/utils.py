@@ -222,8 +222,8 @@ def verify_image_label(args: tuple) -> list:
                 lb = np.array(lb, dtype=np.float32)
             if nl := len(lb):
                 if keypoint:
-                    assert lb.shape[1] == (5 + nkpt * ndim + n_angles * n_extra_props), \
-                        f"labels require {(5 + nkpt * ndim + n_angles * n_extra_props)} columns each"
+                    assert lb.shape[1] == (5 + nkpt * ndim + n_angles + n_extra_props), \
+                        f"labels require {(5 + nkpt * ndim + n_angles + n_extra_props)} columns each, {lb.shape[1]} columns detected"
                     points = lb[:, 5 + n_angles: 5 + n_angles + nkpt * ndim].reshape(-1, ndim)[:, :2]
                 else:
                     assert lb.shape[1] == 5, f"labels require 5 columns, {lb.shape[1]} columns detected"
@@ -246,10 +246,10 @@ def verify_image_label(args: tuple) -> list:
                     msg = f"{prefix}{im_file}: {nl - len(i)} duplicate labels removed"
             else:
                 ne = 1  # label empty
-                lb = np.zeros((0, (5 + nkpt * ndim + n_angles * n_extra_props) if keypoint else 5), dtype=np.float32)
+                lb = np.zeros((0, (5 + nkpt * ndim + n_angles + n_extra_props) if keypoint else 5), dtype=np.float32)
         else:
             nm = 1  # label missing
-            lb = np.zeros((0, (5 + nkpt * ndim + n_angles * n_extra_props) if keypoints else 5), dtype=np.float32)
+            lb = np.zeros((0, (5 + nkpt * ndim + n_angles + n_extra_props) if keypoint else 5), dtype=np.float32)
         if keypoint:
             keypoints = lb[:, 5 + n_angles: 5 + n_angles + nkpt * ndim].reshape(-1, nkpt, ndim)
             if ndim == 2:

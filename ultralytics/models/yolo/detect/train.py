@@ -98,7 +98,7 @@ class DetectionTrainer(BaseTrainer):
         return build_dataloader(
             dataset,
             batch=batch_size,
-            workers=self.args.workers if mode == "train" else self.args.workers * 2,
+            workers=self.args.workers if mode == "train" else 0,  # TODO: more workers maybe cause pause
             shuffle=shuffle,
             rank=rank,
             drop_last=self.args.compile and mode == "train",
