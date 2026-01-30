@@ -208,3 +208,6 @@ results.csv
 tools/
 *.jpg
 *.mp4
+*.csv
+1.py
+_*.py
