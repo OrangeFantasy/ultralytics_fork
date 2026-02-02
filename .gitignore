@@ -206,6 +206,7 @@ results.csv
 
 .py38/
 tools/
+cfg/
 *.jpg
 *.mp4
 *.csv

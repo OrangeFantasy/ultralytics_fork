@@ -424,7 +424,12 @@ class v8DetectionLoss:
         target_scores_sum = max(target_scores.sum(), 1)
 
         # Cls loss
-        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        if "batch_mask" in batch:
+            batch_mask = batch["batch_mask"]
+            loss_bce = self.bce(pred_scores, target_scores.to(dtype)).sum(dim=(1, 2)) * batch_mask
+            loss[1] = loss_bce.sum() / target_scores_sum
+        else:
+            loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
 
         # Bbox loss
         if fg_mask.sum():
@@ -1471,20 +1476,15 @@ class MultiHeadLoss(v8DetectionLoss):
         boxes_per_head  = list(preds["boxes"].chunk(self.n_heads, dim=1))
         scores_per_head = list(preds["scores"].split(self.nc_per_head, dim=1))
         kpts_per_head   = list(preds["kpts"].chunk(self.n_pose_heads, dim=1))
-        kpts_sigma_per_head = None
         if preds.get("kpts_sigma", None) is not None:
             kpts_sigma_per_head = list(preds["kpts_sigma"].chunk(self.n_pose_heads, dim=1))
+        else:
+            kpts_sigma_per_head = None
         angles_per_head = list(preds["angles"].chunk(self.n_angle_heads, dim=1))
         
         for head_idx in reversed(range(self.n_heads)):
-            class_start, class_end = self.class_ranges[head_idx]
-            class_mask = ((batch["cls"] >= class_start) & (batch["cls"] <= class_end)).view(-1)
-            sub_batch = {
-                "batch_idx": batch["batch_idx"][class_mask],
-                "cls": batch["cls"][class_mask] - class_start,
-                "bboxes": batch["bboxes"][class_mask],
-                "resized_shape": batch['resized_shape']
-            }
+            sub_batch = self._select_batch(batch, head_idx)
+
             sub_preds = {
                 "feats": preds["feats"],
                 "boxes": boxes_per_head.pop(),
@@ -1493,36 +1493,85 @@ class MultiHeadLoss(v8DetectionLoss):
 
             curr_head = self.heads[head_idx]
             if curr_head == "angle":
-                sub_batch["angles"] = batch["angles"][class_mask]
                 sub_preds["angles"] = angles_per_head.pop()
             elif curr_head == "pose":
-                sub_batch["cls"] = torch.zeros_like(sub_batch["cls"])  # NOTE: cls of pose head is always 0
-                sub_batch["keypoints"] = batch["keypoints"][class_mask]
                 sub_preds["kpts"] = kpts_per_head.pop()
                 if kpts_sigma_per_head is not None:
                     sub_preds["kpts_sigma"] = kpts_sigma_per_head.pop()
             elif curr_head == "pose-angle":
-                sub_batch["angles"] = batch["angles"][class_mask]
-                sub_batch["keypoints"] = batch["keypoints"][class_mask]
                 sub_preds["angles"] = angles_per_head.pop()
                 sub_preds["kpts"] = kpts_per_head.pop()
                 if kpts_sigma_per_head is not None:
                     sub_preds["kpts_sigma"] = kpts_sigma_per_head.pop()
 
             sub_loss, sub_loss_item = getattr(self, f"loss_{head_idx}").loss(sub_preds, sub_batch)
-            loss_item[head_idx, 0:3] = sub_loss_item[0:3]
+            loss_item[head_idx, 0:3] = sub_loss_item[0:3]  # box, cls, dfl
             loss[head_idx, 0:3] = sub_loss[0:3]
 
             if curr_head == "angle":
-                loss_item[head_idx, 6] = sub_loss_item[3]
+                loss_item[head_idx, 6] = sub_loss_item[3]  # angle
                 loss[head_idx, 6] = sub_loss[3]
             elif curr_head == "pose":
-                loss_item[head_idx, 3:6] = sub_loss_item[3:6]
+                loss_item[head_idx, 3:6] = sub_loss_item[3:6]  # pose, kobj, rle
                 loss[head_idx, 3:6] = sub_loss[3:6]
             elif curr_head == "pose-angle":
-                loss_item[head_idx, 3:7] = sub_loss_item[3:7]
+                loss_item[head_idx, 3:7] = sub_loss_item[3:7]  # pose, kobj, rle, angle
                 loss[head_idx, 3:7] = sub_loss[3:7]
 
-        assert len(boxes_per_head) == len(scores_per_head) == len(kpts_per_head) == len(angles_per_head) == 0
-        assert kpts_sigma_per_head is None or (len(kpts_sigma_per_head) == 0)
+        assert len(boxes_per_head) == len(scores_per_head) == len(kpts_per_head) == len(angles_per_head) == 0, "CHECK FAILED!"
+        assert kpts_sigma_per_head is None or (len(kpts_sigma_per_head) == 0), "CHECK FAILED!"
         return loss.sum(dim=0), loss_item.sum(dim=0)
+
+    def _select_batch(self, batch: dict[str, torch.Tensor], head_idx: int):
+        class_start, class_end = self.class_ranges[head_idx]
+        class_mask = ((batch["cls"] >= class_start) & (batch["cls"] <= class_end)).view(-1)
+        sub_batch = {
+            "batch_idx": batch["batch_idx"][class_mask],
+            "cls": batch["cls"][class_mask] - class_start,
+            "bboxes": batch["bboxes"][class_mask],
+            "resized_shape": batch['resized_shape']
+        }
+
+        curr_head = self.heads[head_idx]
+        if curr_head == "angle":  # NOTE: for smart classroom.
+            sub_batch["angles"] = batch["angles"][class_mask]
+        elif curr_head == "pose":
+            sub_batch["cls"] = torch.zeros_like(sub_batch["cls"])  # NOTE: cls of pose head is always 0, for smart classroom.
+            sub_batch["keypoints"] = batch["keypoints"][class_mask]
+        elif curr_head == "pose-angle":  # NOTE: for ball sports
+            sub_batch["angles"] = batch["angles"][class_mask]
+            sub_batch["keypoints"] = batch["keypoints"][class_mask]
+
+        # Temporarily used to compute v8DetectionLoss with incomplete annotations. For smart classroom.
+        if "extra_props" in batch and (head_idx in [2, 3]):
+            extra_props = batch["extra_props"].to(self.device).view(-1)
+            batch_idx = batch["batch_idx"].to(self.device)
+
+            mask = (extra_props[..., None] == self._extra_props_invalid_actions_and_face).any(dim=-1)
+            batch_mask = (
+                torch.arange(batch["img"].shape[0], device=self.device)[..., None] != torch.unique(batch_idx[mask])
+            ).all(dim=-1)
+            sub_batch["batch_mask"] = batch_mask
+
+        elif "extra_props" in batch and (head_idx in [5]):
+            extra_props = batch["extra_props"].to(self.device).view(-1)
+            batch_idx = batch["batch_idx"].to(self.device)
+
+            mask = (extra_props[..., None] == self._extra_props_valid_body_with_code).any(dim=-1)
+            batch_mask = (
+                torch.arange(batch["img"].shape[0], device=self.device)[..., None] == torch.unique(batch_idx[mask])
+            ).any(dim=-1)
+            batch_mask |= torch.tensor([
+                "/zhaolixiang/" in file for file in batch["im_file"]
+            ], dtype=torch.bool, device=self.device)
+            sub_batch["batch_mask"] = batch_mask
+
+        return sub_batch
+
+    @property
+    def _extra_props_invalid_actions_and_face(self):
+        return torch.tensor([98, 99], device=self.device)
+
+    @property
+    def _extra_props_valid_body_with_code(self):
+        return torch.tensor([99], device=self.device)
