@@ -147,6 +147,7 @@ class BaseTrainer:
                 args_dict["augmentations"] = [repr(t) for t in args_dict["augmentations"]]
             YAML.save(self.save_dir / "args.yaml", args_dict)  # save run args
         self.last, self.best = self.wdir / "last.pt", self.wdir / "best.pt"  # checkpoint paths
+        self.last_state_dict, self.best_state_dict = self.wdir / "last.fp16.state_dict.pt", self.wdir / "best.fp16.state_dict.pt"
         self.save_period = self.args.save_period
 
         self.batch_size = self.args.batch
@@ -629,11 +630,25 @@ class BaseTrainer:
         )
         serialized_ckpt = buffer.getvalue()  # get the serialized content to save
 
+        buffer_state_dict = io.BytesIO()
+        torch.save(
+            {
+                "epoch": self.epoch,
+                "best_fitness": self.best_fitness,
+                "state_dict": deepcopy(self.ema.ema).half().state_dict(),
+                "date": datetime.now().isoformat(),
+            },
+            buffer_state_dict,
+        )
+        serialized_state_dict = buffer_state_dict.getvalue()  # get the serialized content to save
+
         # Save checkpoints
         self.wdir.mkdir(parents=True, exist_ok=True)  # ensure weights directory exists
         self.last.write_bytes(serialized_ckpt)  # save last.pt
+        self.last_state_dict.write_bytes(serialized_state_dict)  # save last.state_dict.pt
         if self.best_fitness == self.fitness:
             self.best.write_bytes(serialized_ckpt)  # save best.pt
+            self.best_state_dict.write_bytes(serialized_state_dict)  # save best.state_dict.pt
         if (self.save_period > 0) and (self.epoch % self.save_period == 0):
             (self.wdir / f"epoch{self.epoch}.pt").write_bytes(serialized_ckpt)  # save epoch, i.e. 'epoch3.pt'
 
