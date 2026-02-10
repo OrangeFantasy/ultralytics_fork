@@ -204,8 +204,11 @@ calibration_*.npy
 args.yaml
 results.csv
 
-.py38/
-tools/
+.py375/
+.Ascend/
+tools/qat
+tools/exporter
+tools/convert_checkpoint.py
 cfg/
 *.jpg
 *.mp4

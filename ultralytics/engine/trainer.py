@@ -333,7 +333,7 @@ class BaseTrainer:
             mode="val",
         )
         self.validator = self.get_validator()
-        self.ema = ModelEMA(self.model)
+        self.ema = ModelEMA(self.model, enabled=self.args.ema)
         if RANK in {-1, 0}:
             metric_keys = self.validator.metrics.keys + self.label_loss_items(prefix="val")
             self.metrics = dict(zip(metric_keys, [0] * len(metric_keys)))
@@ -431,7 +431,7 @@ class BaseTrainer:
                         preds = self.model(batch["img"])
                         loss, self.loss_items = unwrap_model(self.model).loss(batch, preds)
                     else:
-                        loss, self.loss_items = self.model(batch)
+                        loss, self.loss_items = self._forward(batch)
                     self.loss = loss.sum()
                     if RANK != -1:
                         self.loss *= self.world_size
@@ -472,7 +472,7 @@ class BaseTrainer:
 
                 self.run_callbacks("on_train_batch_end")
 
-            if hasattr(unwrap_model(self.model).criterion, "update"):
+            if hasattr(unwrap_model(self.model), "criterion") and hasattr(unwrap_model(self.model).criterion, "update"):
                 unwrap_model(self.model).criterion.update()
 
             self.lr = {f"lr/pg{ir}": x["lr"] for ir, x in enumerate(self.optimizer.param_groups)}  # for loggers
@@ -534,7 +534,8 @@ class BaseTrainer:
         seconds = time.time() - self.train_time_start
         LOGGER.info(f"\n{epoch - self.start_epoch + 1} epochs completed in {seconds / 3600:.3f} hours.")
         # Do final val with best.pt
-        self.final_eval()
+        if self.args.val:
+            self.final_eval()
         if RANK in {-1, 0}:
             if self.args.plots:
                 self.plot_metrics()
@@ -542,6 +543,9 @@ class BaseTrainer:
         self._clear_memory()
         unset_deterministic()
         self.run_callbacks("teardown")
+
+    def _forward(self, batch):
+        return self.model(batch)
 
     def auto_batch(self, max_num_obj=0):
         """Calculate optimal batch size based on model and device memory constraints."""

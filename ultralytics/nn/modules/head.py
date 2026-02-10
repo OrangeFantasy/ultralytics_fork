@@ -77,6 +77,7 @@ class Detect(nn.Module):
     xyxy = False  # xyxy or xywh output
 
     export_function = None
+    forward_function = None
 
     def __init__(self, nc: int = 80, reg_max=16, end2end=False, ch: tuple = ()):
         """Initialize the YOLO detection layer with specified number of classes and channels.
@@ -150,6 +151,8 @@ class Detect(nn.Module):
         self, x: list[torch.Tensor]
     ) -> dict[str, torch.Tensor] | torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Concatenates and returns predicted bounding boxes and class probabilities."""
+        if self.forward_function is not None:
+            return self.forward_function(self, x)
         if self.export_function is not None:
             return self.export_function(self, x)
 

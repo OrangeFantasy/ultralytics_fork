@@ -736,7 +736,12 @@ def handle_yolo_solutions(args: list[str]) -> None:
                 success, frame = cap.read()
                 if not success:
                     break
-                results = solution(frame, f_n := f_n + 1) if solution_name == "analytics" else solution(frame)
+                # results = solution(frame, f_n := f_n + 1) if solution_name == "analytics" else solution(frame)
+                if solution_name == "analytics":
+                    f_n = f_n + 1
+                    results = solution(frame, f_n)
+                else:
+                    results = solution(frame)
                 if solution_name != "crop":
                     vw.write(results.plot_im)
                 if solution.CFG["show"] and cv2.waitKey(1) & 0xFF == ord("q"):

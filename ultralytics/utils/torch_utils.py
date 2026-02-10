@@ -623,7 +623,7 @@ class ModelEMA:
         - https://www.tensorflow.org/api_docs/python/tf/train/ExponentialMovingAverage
     """
 
-    def __init__(self, model, decay=0.9999, tau=2000, updates=0):
+    def __init__(self, model, decay=0.9999, tau=2000, updates=0, enabled=True):
         """Initialize EMA for 'model' with given arguments.
 
         Args:
@@ -632,6 +632,11 @@ class ModelEMA:
             tau (int, optional): EMA decay time constant.
             updates (int, optional): Initial number of updates.
         """
+        self.enabled = enabled
+        if not self.enabled:
+            self.ema = None
+            return
+
         self.ema = deepcopy(unwrap_model(model)).eval()  # FP32 EMA
         self.updates = updates  # number of EMA updates
         self.decay = lambda x: decay * (1 - math.exp(-x / tau))  # decay exponential ramp (to help early epochs)
