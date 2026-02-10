@@ -1,3 +1,5 @@
+from typing import Callable
+
 import ast
 import datetime
 import os
@@ -13,6 +15,8 @@ from tools.fast_math import batch_mahalanobis_for_rle
 torch.distributions.multivariate_normal._batch_mahalanobis = batch_mahalanobis_for_rle
 
 from ultralytics import YOLO
+
+on_add_extra_arguments: Callable[[ArgumentParser], None] = None
 
 def parse_args():
     parser = ArgumentParser()
@@ -46,47 +50,18 @@ def parse_args():
     parser.add_argument("--name", type=str, default=None)
     parser.add_argument("--overwrite", action="store_true", help="If the experiment folder exists, overwrite it.")
 
+    if on_add_extra_arguments is not None:
+        on_add_extra_arguments(parser)
+
     args = parser.parse_args()
     args.override_hyp = ast.literal_eval(args.override_hyp)
     return args
 
-def _set_debug_params(args):
-    print("==> Debug mode.")
-    student_qrcode_args = {
-        "model": "cfg/qrcode/models/yolov8s_19kpts_MergeRaiseHandAndStandUp.yaml",
-        "data": "cfg/qrcode/datasets/19kpts_MergeRaiseHandAndStandUp.yaml",
-        "pretrained": "cfg/qrcode/models/converted_qrcode_0112.fp16.state_dict.pt",
-        "nkpts": 19,
-        "device": "3",
-        "override_hyp": ast.literal_eval(r"{ 'plots': False, 'mosaic': 0 }")
-    }
-    ball_sports_args = {
-        # "model": "cfg/ball_sports/models/yolov8s_25kpts_2H.yaml",
-        "model": "runs/multi-head/train/20260131_165216_best/weights/best.pt",
-        "data": "cfg/ball_sports/datasets/25kpts_2H_Solid_Mosaic.yaml",
-        "nkpts": 25,
-        "act": "relu6",
-        "device": "2",
-        "override_hyp": ast.literal_eval(r"{ 'plots': False, 'scale': 0.6, 'albumentations': 1.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'cls': 1.0 ,'kobj': 0.25, 'rle': 0.5 }"),
-        "sparse": True,
-    }
-    args.__dict__.update(ball_sports_args)
-    args.__dict__.update({
-        "project": ".experiments"
-    })
-
-if __name__ == "__main__":
-    args = parse_args()
-    if sys.gettrace() is not None:
-        _set_debug_params(args)
-
+def initlize_global_args(args):
     if args.delay:
         print(f"==> Task will start after {args.delay} seconds.")
         for _ in tqdm(range(args.delay), total=args.delay, desc="delay", ncols=160):
             time.sleep(1)
-
-    os.environ["__global_args__val_period"] = "5"
-    os.environ["__global_args__val_last_epochs"] = "15"
 
     # Set logging.
     from ultralytics import settings
@@ -120,7 +95,8 @@ if __name__ == "__main__":
     elif args.nkpts == 19:
         loss.OKS_SIGMA = _OKS_SIGMA[args.nkpts]
         os.environ["__global_args__oks_sigma"] = np.array2string(loss.OKS_SIGMA)
-        class_ranges = np.array([[0, 0], [1, 5], [2, 5], [6, 6], [7, 10], [11, 11]], dtype=np.int32)
+        # class_ranges = np.array([[0, 0], [1, 5], [2, 5], [6, 6], [7, 10], [11, 11]], dtype=np.int32)
+        class_ranges = np.array([[0, 0], [1, 5], [2, 3], [4, 5], [6, 6], [7, 10], [11, 11]], dtype=np.int32)
         os.environ["__global_args__multi_head_class_ranges"] = np.array2string(class_ranges.reshape(-1))
         os.environ["__global_args__img2label_paths_sa"] = "zhaolixiang/dataset/multi_task_dataset/trainval/trainval_multi_task_with_action_labels/images"
         os.environ["__global_args__img2label_paths_sb"] = "yuanchengzhi/datasets/SmartClassroom/StandUp_remarked/labels"
@@ -131,14 +107,22 @@ if __name__ == "__main__":
         raise ValueError(f"Unsupported number of keypoints: {args.nkpts}")
 
     # Set default activation function for Conv.
-    from ultralytics.nn.modules.conv import Conv
+    from ultralytics.nn.modules.conv import Conv, ConvTranspose
     _DEFAULT_ACT = {
         "relu": torch.nn.ReLU(),
         "relu6": torch.nn.ReLU6()
     }
     Conv.default_act = _DEFAULT_ACT[args.act]
-    print(f"==> Set Conv.default_act = {_DEFAULT_ACT[args.act]}")
+    ConvTranspose.default_act = _DEFAULT_ACT[args.act]
+    print(f"==> Set default_act = {_DEFAULT_ACT[args.act]}")
 
+    # Set validation period and last epochs.
+    os.environ["__global_args__val_period"] = "5"
+    os.environ["__global_args__val_last_epochs"] = "15"
+
+    return args
+
+def run(args):
     # Initialize YOLO model and parameters.
     model = YOLO(args.model, task=args.task)
     if args.sparse:
@@ -200,3 +184,49 @@ if __name__ == "__main__":
         model.train(**kwargs, state_dict=custom_state_dict)
     elif args.mode == "val":
         model.val(**kwargs)
+
+def override_debug_params(args):
+    print("==> Debug mode.")
+    student_qrcode_args = {
+        "model": "cfg/qrcode/models/yolov8s_19kpts_MergeRaiseHandAndStandUp.yaml",
+        "data": "cfg/qrcode/datasets/19kpts_MergeRaiseHandAndStandUp.yaml",
+        "pretrained": "cfg/qrcode/models/converted_qrcode_0112.fp16.state_dict.pt",
+        "nkpts": 19,
+        "device": "3",
+        "override_hyp": ast.literal_eval(r"{ 'plots': False, 'mosaic': 0 }")
+    }
+    ball_sports_args = {
+        # "model": "cfg/ball_sports/models/yolov8s_25kpts_2H.yaml",
+        "model": "runs/multi-head/train/20260131_165216_best/weights/best.pt",
+        "data": "cfg/ball_sports/datasets/25kpts_2H_Solid_Mosaic.yaml",
+        "nkpts": 25,
+        "act": "relu6",
+        "device": "2",
+        "override_hyp": ast.literal_eval(r"{ 'plots': False, 'scale': 0.6, 'albumentations': 1.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'cls': 1.0 ,'kobj': 0.25, 'rle': 0.5 }"),
+        "sparse": True,
+        "sparse_mode": 2,
+    }
+    running_args = {
+        "model": "cfg/running/models/yolov8s-25-poseAngles-m.yaml",
+        "data": "cfg/running/datasets/25kpts.yaml",
+        "pretrained": "/data5/xieyangyang/MultiTaskDetector/runs/SportsDets_poseAngles_m/25points6/weights/best.fp16.state_dict.pt",
+        "nkpts": 25,
+        "act": "relu6",
+        "device": "2",
+        "override_hyp": ast.literal_eval(r"{ 'plots': False, }"),
+        "sparse": False,
+        "sparse_mode": 0,
+        "epochs": 1,
+    }
+    args.__dict__.update(running_args)
+    args.__dict__.update({
+        "project": ".experiments"
+    })
+
+if __name__ == "__main__":
+    args = parse_args()
+    if sys.gettrace() is not None or False:
+        override_debug_params(args)
+
+    initlize_global_args(args)
+    run(args)

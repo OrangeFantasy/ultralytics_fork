@@ -1,0 +1,25 @@
+path: /data5/yuanchengzhi/Datasets/SmartSports/SolidBalls # dataset root dir
+train: labels/train.txt # train images (relative to 'path') 39384 images
+val: labels/val-solid.txt # val images (relative to 'path') 15062 images
+
+# Keypoints
+kpt_shape: [25, 3]  # [number of keypoints, number of dim]
+flip_idx: [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15, 20, 21, 22, 17, 18, 19, 24, 23]
+
+n_angles: 3
+n_extra_props: 0  # number of extra properties
+
+heads: ["pose-angle", "detect"]
+nc_per_head: [2, 1]
+
+coco_jdict_index: [0, 0, 1]
+coco_category_id: [1, 2, 1]
+coco_annotations:
+  - null
+
+# Classes
+names:
+  0: Head
+  1: Body
+  2: Ball
+

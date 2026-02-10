@@ -1,0 +1,39 @@
+path: /data4/yuanchengzhi/Datasets/QRCode/ # dataset root dir
+train: labels/train.txt # train images (relative to 'path') 39384 images
+val: labels/val.txt # val images (relative to 'path') 15062 images
+
+# Keypoints
+kpt_shape: [19, 3]  # [number of keypoints, number of dim]
+flip_idx: [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15, 18, 17]
+
+n_angles: 3
+n_extra_props: 1  # number of extra properties
+
+heads: ["angle", "pose", "detect", "angle", "detect", "detect"]
+nc_per_head: [1, 1, 4, 1, 4, 1]
+
+coco_jdict_index: [0, 1, 2, 2, 3, 3, 4]
+coco_category_id: [1, 1, 1, 2, 1, 2, 1]
+coco_annotations:
+  - annotations_update/head_infoes.json
+  - annotations_update/body_infoes.json
+  - annotations_update/raise_hand_infoes.json
+  - annotations_update/standup_teacher_infoes.json
+  - annotations_update/face_infoes.json
+
+# Classes
+names:
+  0: Head
+  1: Body
+  2: RaiseHand
+  3: RaiseHandHighly
+  4: StandUp
+  5: Teacher
+  6: Face
+  7: A
+  8: B
+  9: C
+  10: D
+  11: BodyWithCode
+
+  
