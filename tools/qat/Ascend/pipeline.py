@@ -1,7 +1,6 @@
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
 
 import os
-import json
 import shutil
 from copy import deepcopy
 
@@ -133,7 +132,10 @@ class Ascend_Pipeline(QAT_Pipeline):
     _default_config_file: str = os.path.join("runs/.amct_cache", "config.json")
     _defualt_record_file: str = os.path.join("runs/.amct_cache", "record.txt")
 
-    def initialize_env(self, *args, **kwargs):
+    def initialize_env(
+        self, 
+        **ignore_kwargs
+    ):
         if not os.path.exists("runs/.amct_cache"):
             os.makedirs("runs/.amct_cache", mode=777)
 
@@ -143,6 +145,7 @@ class Ascend_Pipeline(QAT_Pipeline):
         qat_weights: str | None,
         only_init_config: bool = False, 
         state_dict_key: str = "model",
+        **ignore_kwargs,
     ) -> tuple[torch.nn.Module, torch.nn.Module]:
         for m in model_fp.modules():
             if isinstance(m, (torch.nn.ReLU, torch.nn.ReLU6)):
@@ -153,17 +156,17 @@ class Ascend_Pipeline(QAT_Pipeline):
         record_file = self._defualt_record_file
 
         if only_init_config or not os.path.exists(config_file):
-            print("==> AMCT: create_quant_retrain_config ...")
+            print("==> [AMCT] create_quant_retrain_config ...")
             model_fp.train()
             create_quant_retrain_config(config_file, model_fp, dummy_input, config_defination=None)
             print(f"==> Retrain config has been saved to {config_file}. Make sure and then restart the training.")
             exit()
 
         if qat_weights is not None:
-            print(f"==> AMCT: restore_quant_retrain_model from {qat_weights} ...")
+            print(f"==> [AMCT] restore_quant_retrain_model from {qat_weights} ...")
             model_qat = restore_quant_retrain_model(config_file, model_fp, record_file, dummy_input, qat_weights, state_dict_key)
         else:   
-            print("==> AMCT: create_quant_retrain_model ...")
+            print("==> [AMCT] create_quant_retrain_model ...")
             model_qat = create_quant_retrain_model(config_file, model_fp, record_file, dummy_input)
         return model_fp, model_qat
 
@@ -172,7 +175,7 @@ class Ascend_Pipeline(QAT_Pipeline):
         input_names: List[str] = None, 
         output_names: List[str] = None, 
         dynamic_axes: Dict[str, Dict] = None,
-        **unused_kwargs
+        **ignore_kwargs,
     ) -> None:
         save_path = str(self.wdir / "amct")
         if not os.path.exists(save_path):
@@ -190,12 +193,12 @@ class Ascend_Pipeline(QAT_Pipeline):
         model_fp = deepcopy(self.model_fp)
         model_fp.model[-1].export = True
 
-        qat_weights = self.config.model_qat_weights if self.config.skip_train else self.last_state_dict
-        _, model_qat = self.prepare(model_fp, qat_weights, **self.config.custom_kwargs)
+        qat_weights = self.qat_config.model_qat_weights if self.qat_config.skip_train else self.last
+        _, model_qat = self.prepare(model_fp, qat_weights, **self.qat_config.custom_kwargs)
 
         # Export model.
         dummy_input = (torch.randn((1, 3, *self.args.imgsz), device=self.device),)
         save_quant_retrain_model(
-            self._default_config_file, model_qat, self._defualt_record_file, f"{save_path}/amct", dummy_input, input_names, output_names, dynamic_axes
+            self._default_config_file, model_qat.eval(), self._defualt_record_file, f"{save_path}/AMCT", dummy_input, input_names, output_names, dynamic_axes
         )
-        print(f"==> AMCT: save_quant_retrain_model to {save_path}")
+        print(f"==> [AMCT] save_quant_retrain_model to {save_path}")

@@ -369,7 +369,7 @@ if __name__ == "__main__":
         "main.py",
         "main_qat.py",
     ]
-    out_dir = "./.py375"
+    out_dir = "./.AMCT_QAT"
 
     converter = Py310ToPy37_CodeConverter()
     converter.convert_tree(root, sources, out_dir)

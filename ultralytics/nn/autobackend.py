@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import json
 import platform
 import zipfile
@@ -714,7 +715,12 @@ class AutoBackend(nn.Module):
 
         # PyTorch
         if self.pt or self.nn_module:
-            y = self.model(im, augment=augment, visualize=visualize, embed=embed, **kwargs)
+            params = inspect.signature(self.model.forward).parameters
+            call_kwargs = { }
+            for k, v in { "augment": augment, "visualize": visualize, "embed": embed, **kwargs }.items():
+                if k in params:
+                    call_kwargs[k] = v
+            y = self.model(im, **call_kwargs)
 
         # TorchScript
         elif self.jit:

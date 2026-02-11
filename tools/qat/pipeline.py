@@ -70,10 +70,10 @@ class QAT_Pipeline(_QAT_Trainer):
         module = importlib.import_module(module_path, package=package)
         return getattr(module, cls_name)(*args, **kwargs)
 
-    def __init__(self, platform, cfg=DEFAULT_CFG, overrides=None, _callbacks=None, config: 'QAT_Config' = None):
+    def __init__(self, platform, cfg=DEFAULT_CFG, overrides=None, _callbacks=None, qat_config: 'QAT_Config' = None):
         super().__init__(cfg, overrides, _callbacks)
         self.overrides = overrides
-        self.config = config
+        self.qat_config = qat_config
         self.enable_ema = False
 
         self.platform = platform
@@ -135,8 +135,10 @@ class QAT_Pipeline(_QAT_Trainer):
         preprocess_function = lambda batch: self.preprocess_batch(batch)["img"]
         return loader, preprocess_function
 
-    def to(self, device):
+    def to(self, device: str | torch.device):
+        self.args.device = str(device)
         self.device = device    
+
         self.model_fp.to(device)
         self.model.to(device)
 
@@ -240,6 +242,7 @@ class ValConfig:
     conf: float = 0.001
     iou: float = 0.65
     save_json: bool = False
+    half: bool = False
     fuse: bool = False
     plots: bool = True
     verbose: bool = True
@@ -276,7 +279,7 @@ class QAT_Config:
 def run_qat(config: QAT_Config):
     platform_name = config.platform.lower()
     assert platform_name in QAT_Pipeline.registried_platform.keys(), f"[Error] platform {config.platform} is not supported"
-    pipe = QAT_Pipeline.build(platform_name, platform=config.platform, overrides=config.overrides, config=config)
+    pipe = QAT_Pipeline.build(platform_name, platform=config.platform, overrides=config.overrides, qat_config=config)
 
     for event, callback in config.callbacks.items():
         pipe.add_callback(pipe, event, callback)
@@ -284,7 +287,7 @@ def run_qat(config: QAT_Config):
     pipe.initialize_env(**config.custom_kwargs)
 
     model_fp = pipe.load_floating_point_model(weights=config.model_fp_weights)
-    print(f"==> Build floating point model with weights: {config.model_fp_weights}")
+    print(f"==> [QAT] Build floating point model with weights: {config.model_fp_weights}")
 
     m = model_fp.model[-1]
     if config.qat_functions.forward is not None:
@@ -295,13 +298,13 @@ def run_qat(config: QAT_Config):
         m.inference_qat = config.qat_functions.inference_qat
 
     if config.model_qat_weights is not None:
-        print(f"==> qat_weights has been provided, skip training")
+        print(f"==> [QAT] qat_weights has been provided, skip training")
         config.skip_train = True
 
     model_fp, model_qat = pipe.prepare(model_fp, qat_weights=config.model_qat_weights, **config.custom_kwargs)
     pipe.set_prepared_model(model_fp, model_qat)
 
-    if not config.skip_train or config.val_config.enable:
+    if not config.skip_train:
         if config.calibrate_config.enable:
             calibrate_params = config.calibrate_config.__dict__
             calibrate_params.pop("enable")
