@@ -441,6 +441,9 @@ class BaseTrainer:
                         self.tloss = (
                             self.loss_items if self.tloss is None else (self.tloss * i + self.loss_items) / (i + 1)
                         )
+
+                    # Backward
+                    self.scaler.scale(self.loss).backward()
                 except torch.cuda.OutOfMemoryError:
                     if epoch > self.start_epoch or self._oom_retries >= 3 or RANK != -1:
                         raise  # only auto-reduce during first epoch on single GPU, max 3 retries

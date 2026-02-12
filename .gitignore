@@ -206,12 +206,14 @@ results.csv
 
 .py375/
 .Ascend/
-tools/qat
-tools/exporter
-tools/convert_checkpoint.py
-cfg/
+# tools/qat
+# tools/exporter
+# tools/convert_checkpoint.py
+# cfg/
 *.jpg
 *.mp4
 *.csv
 1.py
 _*.py
+
+cfg/**/*.json
