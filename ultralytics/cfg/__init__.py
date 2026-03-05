@@ -183,8 +183,8 @@ CFG_FRACTION_KEYS = frozenset(
         "mixup",
         "cutmix",
         "copy_paste",
-        "conf",
-        "iou",
+        # "conf",
+        # "iou",
         "fraction",
         "multi_scale",
     }

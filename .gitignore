@@ -215,5 +215,5 @@ results.csv
 *.csv
 1.py
 _*.py
-
+*.csv
 cfg/**/*.json
