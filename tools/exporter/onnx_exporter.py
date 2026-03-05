@@ -85,8 +85,9 @@ def export_student_qrcode(self, x):
 
 student_qrcode_config = ExportParams(
     # model_path="runs/mdetectors_qrcode/20260126_add_match/weights/best.pt",
-    model_path="runs/multi-head/train/20260207_231833_yolov8s_19kpts_MergeRaiseHandAndStandUp/weights/best.pt",
-    onnx_path=".export/smart_classroom/student_448x768_qrcode_20260207.fp32.onnx",
+    # model_path="runs/multi-head/train/20260207_231833_yolov8s_19kpts_MergeRaiseHandAndStandUp/weights/best.pt",
+    model_path="runs/multi-head/qrcode/20260209_192315_yolov8s_19kpts_MergeRaiseHandAndStandUp/weights/best.pt",
+    onnx_path="runs/_export/smart_classroom/student_448x768_qrcode_20260209.fp32.onnx",
     task="multi-detectors",
     input_shape=(1, 3, 448, 768),
     input_names=["input"],
@@ -162,8 +163,9 @@ ball_544x960_2H_config = ExportParams(
 ball_448x768_2H_config = ExportParams(
     # model_path="runs/multi-head/ball_sports/20260203_183401_Sparse/weights/best.pt",
     # model_path="runs/multi-head/train/20260206_142318_yolo11s_25kpts_2H/weights/best.pt",
-    model_path="runs/multi-head/train/20260206_172434_yolo11s_25kpts_2H_v1/weights/best.pt",
-    onnx_path="runs/_export/ball_sports/yolov11s_ball_fbvs_448x768_2H_fp32_v260206.onnx",
+    # model_path="runs/multi-head/train/20260206_172434_yolo11s_25kpts_2H_v1/weights/best.pt",
+    model_path="runs/multi-head/train/20260228_190347_best/weights/best.pt",
+    onnx_path="runs/_export/ball_sports/yolov8s_ball_fbvs_448x768_2H_fp32_v260228.onnx",
     task="multi-detectors",
     input_shape=(1, 3, 448, 768),
     input_names=["input"],
@@ -238,4 +240,4 @@ def export_onnx(params: ExportParams):
     print(f"==> Convert done, model saved to: {onnx_path}")
 
 if __name__ == "__main__":
-    export_onnx(student_qrcode_config)
+    export_onnx(ball_448x768_2H_config)

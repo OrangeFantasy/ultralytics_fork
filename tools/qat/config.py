@@ -12,7 +12,7 @@ def get_overrides(args):
         "imgsz" : args.imgsz,  "conf"  : args.conf,   "iou"  : args.iou,   "max_det": 300,
         "warmup_epochs": 0,    "single_cls": False,
         "amp"   : False,       "ema"   : False,        
-        "optimizer": "SGD",    "lr0"   : 0.01 * 0.01, "lrf"  : 0.05,
+        "optimizer": "auto",   "lr0"   : 0.01 * 0.01, "lrf"  : 0.05,
         "mosaic": 0.0,         "fliplr": 0.5,         "scale": 0.6,         
         "plots" : True,        "save_period": 5,      "val"  : False,
         "project": args.project or "qat",
@@ -78,7 +78,7 @@ def get_ball_sports_qat_config(args):
         platform=args.platform or "rknn",
         overrides=get_overrides(args),
         model_fp_weights=args.pretrained or "runs/multi-head/train/20260131_165216_best/weights/best.pt",
-        # model_qat_weights="runs/multi-head/.experiments/20260205_191746_yolov8s_25kpts_2H/weights/last.pt",
+        # model_qat_weights="/data4/yuanchengzhi/projects/ultralytics_fork/runs/multi-head/.experiments/20260211_180945_yolov8s_25kpts_2H/weights/last.pt",
         skip_train=False,
         val_config=ValConfig(
             enable=True,

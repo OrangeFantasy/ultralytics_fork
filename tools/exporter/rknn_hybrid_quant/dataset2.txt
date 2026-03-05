@@ -335,7 +335,6 @@
 /data5/yuanchengzhi/Datasets/SmartSports/Balls_3_NoPole/images/train/objects365/objects365_v2_02105388.jpg
 /data5/yuanchengzhi/Datasets/SmartSports/Balls_3_NoPole/images/train/videos/volleyball-26.mp4-000476.jpg
 /data5/yuanchengzhi/Datasets/SmartSports/Balls_3_NoPole/images/train/objects365/objects365_v1_00088149.jpg
-/data5/yuanchengzhi/Datasets/SmartSports/Balls_3_NoPole/images/train/web/f393daaf88cb20e6.jpg
 /data5/yuanchengzhi/Datasets/SmartSports/Balls_3_NoPole/images/train/videos/douyin-0073-000001.jpg
 /data5/yuanchengzhi/Datasets/SmartSports/SolidBalls/images/train/videos-1126/bili-0042-000148.jpg
 /data5/yuanchengzhi/Datasets/SmartSports/Balls_3_NoPole/images/train/videos/volleyball-32.mp4-001766.jpg

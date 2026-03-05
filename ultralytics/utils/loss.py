@@ -1542,8 +1542,13 @@ class MultiHeadLoss(v8DetectionLoss):
             sub_batch["angles"] = batch["angles"][class_mask]
             sub_batch["keypoints"] = batch["keypoints"][class_mask]
 
+        merge_actions = self.n_heads == 6
+
         # Temporarily used to compute v8DetectionLoss with incomplete annotations. For smart classroom.
-        if "extra_props" in batch and (head_idx in [2, 3]):
+        actions_and_face_heads = [2, 3] if merge_actions else [2, 3, 4]
+        match_head = [5] if merge_actions else [6]
+
+        if "extra_props" in batch and (head_idx in actions_and_face_heads):
             extra_props = batch["extra_props"].to(self.device).view(-1)
             batch_idx = batch["batch_idx"].to(self.device)
 
@@ -1553,17 +1558,24 @@ class MultiHeadLoss(v8DetectionLoss):
             ).all(dim=-1)
             sub_batch["batch_mask"] = batch_mask
 
-        elif "extra_props" in batch and (head_idx in [5]):
+        elif "extra_props" in batch and (head_idx in match_head):
             extra_props = batch["extra_props"].to(self.device).view(-1)
             batch_idx = batch["batch_idx"].to(self.device)
 
             mask = (extra_props[..., None] == self._extra_props_valid_body_with_code).any(dim=-1)
             batch_mask = (
                 torch.arange(batch["img"].shape[0], device=self.device)[..., None] == torch.unique(batch_idx[mask])
-            ).any(dim=-1)
-            batch_mask |= torch.tensor([
-                "/zhaolixiang/" in file for file in batch["im_file"]
-            ], dtype=torch.bool, device=self.device)
+            ).any(dim=-1)  # select extra_props with 99
+            batch_mask &= torch.tensor([
+                "/train_office/" not in file for file in batch["im_file"]
+            ], dtype=torch.bool, device=self.device)  # ignore /train_office/
+            # if batch_mask.sum() > 0:
+            #     for i in range(batch_mask.shape[0]):
+            #         if batch_mask[i]:
+            #             print(head_idx, batch["im_file"][i])
+            # batch_mask |= torch.tensor([
+            #     "/zhaolixiang/" in file for file in batch["im_file"]
+            # ], dtype=torch.bool, device=self.device)
             sub_batch["batch_mask"] = batch_mask
 
         return sub_batch

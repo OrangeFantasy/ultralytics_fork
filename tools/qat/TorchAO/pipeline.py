@@ -8,10 +8,13 @@ import torch
 from torch import fx
 from torch.ao.quantization import (
     FakeQuantize, 
+    HistogramObserver,
+    MinMaxObserver, 
     MovingAverageMinMaxObserver, 
     MovingAveragePerChannelMinMaxObserver, 
     QConfig, 
     QConfigMapping, 
+    get_default_qconfig
 )
 from torch.ao.quantization.fake_quantize import FakeQuantize
 from torch.ao.quantization.observer import ObserverBase
@@ -41,19 +44,25 @@ class TorchAO_Pipeline(QAT_Pipeline):
     @staticmethod
     def get_defualt_qconfig() -> QConfig:
         # From Rockchip_RKNPU_User_Guide_RKNN_SDK_V2.3.2
+        # return get_default_qconfig("qnnpack")
+        # default_weight_observer = MinMaxObserver.with_args(
+        #     dtype=torch.qint8, qscheme=torch.per_tensor_affine
+        # )
         return QConfig(
             activation=FakeQuantize.with_args(
-                observer=MovingAverageMinMaxObserver,
+                observer=HistogramObserver,
                 quant_min=0,
                 quant_max=255,
+                dtype=torch.quint8,
+                qscheme=torch.per_tensor_affine,
                 reduce_range=False
             ),
-            weight = FakeQuantize.with_args(
-                observer=MovingAveragePerChannelMinMaxObserver,
+            weight=FakeQuantize.with_args(
+                observer=HistogramObserver,
                 quant_min=-128,
                 quant_max=127,
                 dtype=torch.qint8,
-                qscheme=torch.per_channel_affine,
+                qscheme=torch.per_tensor_affine,
                 reduce_range=False
             )
         )
@@ -83,7 +92,7 @@ class TorchAO_Pipeline(QAT_Pipeline):
         if qat_weights:
             model_qat = self.convert(model_qat)
             weights = torch.load(qat_weights, map_location="cpu", weights_only=True)
-            model_qat.load_state_dict(weights[weight_key], state_dict=True)
+            model_qat.load_state_dict(weights[weight_key], strict=True)
             print(f"==> [TorchAO] load quantization model weights from {qat_weights}")
 
         return model_fp, model_qat

@@ -61,7 +61,7 @@ def export_header(rknn_model_path: str, header_name: Optional[str] = None):
         f.write(f"\n")
         f.write(f"#endif // {macro}\n")
 
-    print(f"==> Export header: {header_path}.")
+    print(f"==> [Info] Export header: {header_path}.")
     return header_path
 
 def export_rknn(
@@ -77,14 +77,16 @@ def export_rknn(
     custom_hybrid: List[List[str]] | None = None,
     rknn_batch_size: int = 1,
     sparse_infer: bool = False,
-    verbose: bool = True
+    verbose: bool = True,
+    clear_after_exporting: bool = True,
 ):
     if not do_quantization:
         assert dataset_path, "dataset_path is required when do_quantization is False"
     if not sparse_infer:
         version = get_rknn_version()
         expected_version = "2.3.0"
-        print(f"==> [Warning] RKNN version {version} is less than {expected_version}, some features may not work properly. Please upgrade to {expected_version} or later.")
+        if version < expected_version:
+            print(f"==> [Warning] RKNN version {version} is less than {expected_version}, some features may not work properly. Please upgrade to {expected_version} or later.")
 
     assert proposal or len(custom_hybrid) > 0, "proposal=True or custom_hybrid is required"
     if proposal:
@@ -138,6 +140,13 @@ def export_rknn(
             )
         )
 
+    # Accuracy analysis
+    print(f"==> [Info] Accuracy analysis")
+    image_path = "/data5/yuanchengzhi/Datasets/SmartSports/Balls_3_NoPole/images/train/captures-1/vlc_record_2025_12_15_15h36m13s_rtsp___192_168_1_64_554_Streaming_channels_1__009375.jpg"
+    check_rknn(
+        rknn.accuracy_analysis(inputs=[image_path], output_dir=None)
+    )
+
     check_rknn(
         rknn.export_rknn(rknn_path)
     )
@@ -145,6 +154,25 @@ def export_rknn(
 
     # Release resources
     rknn.release()
+
+    if clear_after_exporting:
+        clear_temporary_files(model_path)
+
+def clear_temporary_files(model_path: str):
+    work_dir = os.getcwd()
+
+    for filename in ["check0_base_optimize.onnx", "check2_correct_ops.onnx", "check3_fuse_ops.onnx"]:
+        file = os.path.join(work_dir, filename)
+        if os.path.exists(file):
+            os.remove(file)
+            print(f"==> [Info] Remove temporary file: {file}")
+
+    model_name = os.path.basename(model_path).rsplit(".", 1)[0]
+    for suffix in [".model", ".data", ".quantization.cfg"]:
+        file = os.path.join(work_dir, model_name + suffix)
+        if os.path.exists(file):
+            os.remove(file)
+            print(f"==> [Info] Remove temporary file: {file}")
 
 @dataclass
 class ExportParams:
@@ -161,16 +189,19 @@ class ExportParams:
     rknn_batch_size: int = 1
     sparse_infer: bool = False
     verbose: bool = True
+    clear_after_exporting: bool = True
 
 ball_sports_config = ExportParams(
     # model_path="runs/_export/ball_sports/yolov8s_ball_fbvs_448x768_2H_fp32_sparse42_v260203_simplified.onnx",
     # model_path="/data4/yuanchengzhi/projects/ultralytics_fork/runs/multi-head/.experiments/20260205_190521_yolov8s_25kpts_2H/weights/TorchAO/model_torchao_qat.onnx",
-    model_path="runs/_export/ball_sports/yolov11s_ball_fbvs_448x768_2H_fp32_v260206.onnx",
-    rknn_path="runs/_export/rknn/ball_sports/hybrid/yolov11s_ball_fbvs_448x768_2H_rk3588_hybrid_v260206.rknn",
+    # model_path="runs/_export/ball_sports/yolov11s_ball_fbvs_448x768_2H_fp32_v260206.onnx",
+    model_path="runs/_export/ball_sports/yolov8s_ball_fbvs_448x768_2H_fp32_v260228.onnx",
+    rknn_path="runs/_export/rknn/ball_sports/hybrid/yolov8s_ball_fbvs_448x768_2H_rk3588_hybrid_v260228_1.rknn",
     dataset_path="/data4/yuanchengzhi/projects/ultralytics_fork/tools/exporter/rknn_hybrid_quant/dataset.txt",
+    # dataset_path="/data5/yuanchengzhi/Datasets/SmartSports/hybrid_datasets.txt",
     target_platform="rk3588",
     sparse_infer=False,
-    # do_quantization=False,
+    do_quantization=True,
     proposal=False,
     custom_hybrid=[
         ['/model.21/cv4.0/cv4.0.0/act/Clip_output_0', 'head_body_56x96'],
@@ -179,6 +210,9 @@ ball_sports_config = ExportParams(
         ['/model.21/cv3.1.0/cv3.1.0.0/act/Clip_output_0', 'ball_56x96'],
         ['/model.21/cv3.1.1/cv3.1.1.0/act/Clip_output_0', 'ball_28x48'],
         ['/model.21/cv3.1.2/cv3.1.2.0/act/Clip_output_0', 'ball_14x24'],
+        # ['/model.14/cv2/act/Clip_output_0', '/model.21/cv3.1.0/cv3.1.0.0/act/Clip_output_0'],
+        # ['/model.17/cv2/act/Clip_output_0', '/model.21/cv3.1.1/cv3.1.1.0/act/Clip_output_0'],
+        # ['/model.20/cv2/act/Clip_output_0', '/model.21/cv3.1.2/cv3.1.2.0/act/Clip_output_0'],
     ], 
 )
 

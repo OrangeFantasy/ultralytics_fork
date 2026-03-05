@@ -1,6 +1,6 @@
 from typing import Any, Callable, Dict, Optional, Tuple, Union, TYPE_CHECKING, Type
-from pathlib import Path
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import importlib
 import io
@@ -18,15 +18,15 @@ from ultralytics.nn.tasks import load_checkpoint
 from ultralytics.utils import __version__, DEFAULT_CFG, DEFAULT_CFG_DICT, LOCAL_RANK, LOGGER, ops
 from ultralytics.utils.torch_utils import unwrap_model
 
-def C2f_forward(self, x: torch.Tensor) -> torch.Tensor:
-    # NOTE: Default quantization. For SOPHGO and AMCT.
-    # y = list(self.cv1(x).chunk(2, 1))
-    y = self.cv1(x)
-    y1, y2 = y.split(y.size(1) // 2, dim=1)
-    y = [y1, y2]
-    y.extend(m(y[-1]) for m in self.m)
-    return self.cv2(torch.cat(y, 1))
-C2f.forward = C2f_forward
+# def C2f_forward(self, x: torch.Tensor) -> torch.Tensor:
+#     # NOTE: Default quantization. For SOPHGO and AMCT.
+#     # y = list(self.cv1(x).chunk(2, 1))
+#     y = self.cv1(x)
+#     y1, y2 = y.split(y.size(1) // 2, dim=1)
+#     y = [y1, y2]
+#     y.extend(m(y[-1]) for m in self.m)
+#     return self.cv2(torch.cat(y, 1))
+# C2f.forward = C2f_forward
 
 
 from ultralytics.nn.tasks import MultiHeadModel
@@ -54,12 +54,11 @@ class QAT_Validator(_QAT_Validator):
         preds = self.inference_qat(preds)
         return super().postprocess(preds)
 
-
 class QAT_Pipeline(_QAT_Trainer):
     registried_platform: Dict[str, str] = { }
 
     @classmethod
-    def register(cls, name, path):
+    def register(cls, name: str, path: str) -> None:
         cls.registried_platform[name] = path
 
     @classmethod
@@ -77,7 +76,7 @@ class QAT_Pipeline(_QAT_Trainer):
         self.enable_ema = False
 
         self.platform = platform
-        LOGGER.info(f"==> Build quantization pipeline for {platform} platform.")
+        LOGGER.info(f"==> [QAT] Build quantization pipeline for {platform} platform.")
 
         self.model_fp: Optional[torch.nn.Module] = None
         self.model: Optional[torch.nn.Module] = None
@@ -106,7 +105,7 @@ class QAT_Pipeline(_QAT_Trainer):
                     weights, _ = load_checkpoint(weights, device=self.device)  # Load from .pt file
                 model.load(weights)
             except:
-                LOGGER.info("==> Load weights failed. Try to load weights as a state dict.")
+                LOGGER.info("==> [QAT] Load weights failed. Try to load weights as a state dict.")
                 weights = torch.load(weights, map_location="cpu", weights_only=True)["state_dict"]
                 model.load_state_dict(weights)
         return model
