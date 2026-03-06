@@ -229,6 +229,7 @@ class Results(SimpleClass, DataExportMixin):
         masks: torch.Tensor | None = None,
         probs: torch.Tensor | None = None,
         keypoints: torch.Tensor | None = None,
+        angles: torch.Tensor | None = None,
         obb: torch.Tensor | None = None,
         speed: dict[str, float] | None = None,
     ) -> None:
@@ -258,6 +259,7 @@ class Results(SimpleClass, DataExportMixin):
         self.masks = Masks(masks, self.orig_shape) if masks is not None else None  # native size or imgsz masks
         self.probs = Probs(probs) if probs is not None else None
         self.keypoints = Keypoints(keypoints, self.orig_shape) if keypoints is not None else None
+        self.angles = Angles(angles, self.orig_shape) if angles is not None else None
         self.obb = OBB(obb, self.orig_shape) if obb is not None else None
         self.speed = speed if speed is not None else {"preprocess": None, "inference": None, "postprocess": None}
         self.names = names
@@ -305,6 +307,7 @@ class Results(SimpleClass, DataExportMixin):
         probs: torch.Tensor | None = None,
         obb: torch.Tensor | None = None,
         keypoints: torch.Tensor | None = None,
+        angles: torch.Tensor | None = None,
     ):
         """Update the Results object with new detection data.
 
@@ -334,6 +337,8 @@ class Results(SimpleClass, DataExportMixin):
             self.obb = OBB(obb, self.orig_shape)
         if keypoints is not None:
             self.keypoints = Keypoints(keypoints, self.orig_shape)
+        if angles is not None:
+            self.angles = Angles(angles, self.orig_shape)
 
     def _apply(self, fn: str, *args, **kwargs):
         """Apply a function to all non-empty attributes and return a new Results object with modified attributes.
@@ -1531,3 +1536,45 @@ class OBB(BaseTensor):
             if isinstance(x, torch.Tensor)
             else np.stack([x.min(1), y.min(1), x.max(1), y.max(1)], -1)
         )
+
+class Angles(BaseTensor):
+    """
+    A class for storing and manipulating head pose angles (pitch, yaw, roll).
+
+    This class encapsulates functionality for handling head pose angles, including mirror transformation,
+    normalization, and confidence values. It supports angle data with optional confidence information.
+
+    Attributes:
+        data (torch.Tensor): The raw tensor containing angle data.
+        orig_shape (Tuple[int, int]): The original image dimensions (height, width) for reference.
+        has_visible (bool): Indicates whether confidence information is available for angles.
+        pitch (torch.Tensor): Pitch angles in degrees.
+        yaw (torch.Tensor): Yaw angles in degrees.
+        roll (torch.Tensor): Roll angles in degrees.
+        normalized (torch.Tensor): Normalized angles in range [-1, 1].
+        conf (torch.Tensor): Confidence values for each angle set, if available.
+
+    Methods:
+        mirror: Apply horizontal mirror transformation to angles.
+        cpu: Return a copy of the angles tensor on CPU memory.
+        numpy: Return a copy of the angles tensor as a numpy array.
+        cuda: Return a copy of the angles tensor on GPU memory.
+        to: Return a copy of the angles tensor with specified device and dtype.
+    """
+
+    def __init__(self, angles: torch.Tensor | np.ndarray, orig_shape: tuple[int, int]) -> None:
+        """
+        Initialize the Angles object with head pose angles and original image dimensions.
+
+        Args:
+            angles (torch.Tensor | np.ndarray): A tensor containing angle data. Shape can be either:
+                - (num_objects, 3) for pitch, yaw, roll angles only
+                - (num_objects, 4) for pitch, yaw, roll angles and confidence score
+            orig_shape (Tuple[int, int]): The original image dimensions (height, width).
+
+        Examples:
+            >>> angles_data = torch.tensor([[15.0, -10.0, 5.0]])  # 1 object, [pitch, yaw, roll]
+            >>> orig_shape = (480, 640)
+            >>> angles = Angles(angles_data, orig_shape)
+        """
+        super().__init__(angles, orig_shape)

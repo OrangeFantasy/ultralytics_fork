@@ -102,8 +102,8 @@ class MultiHeadPredictor(DetectionPredictor):
         result = super().construct_result(pred, img, orig_img, img_path)
         # Extract keypoints from prediction and reshape according to model's keypoint shape
         pred_kpts = pred[:, 6:-3].view(len(pred), *self.model.kpt_shape)
-        pred_angs = pred[:, -3:].view(len(pred), 3)
+        pred_angs = pred[:, -3:].view(len(pred), 3)  # TODO: add angles in results
         # Scale keypoints coordinates to match the original image dimensions
         pred_kpts = ops.scale_coords(img.shape[2:], pred_kpts, orig_img.shape)
-        result.update(keypoints=pred_kpts)
+        result.update(keypoints=pred_kpts, angles=pred_angs)
         return result
