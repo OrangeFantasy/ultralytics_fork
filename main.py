@@ -170,6 +170,12 @@ def run(args):
     }
     kwargs.update(args.override_hyp)
 
+    # freeze_layers = [
+    #     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+    #     "21.cv2", "21.cv3", "21.cv4",  "21.cv4_kpts", "21.cv4_sigma", "21.flow_model",
+    # ]
+    # kwargs["freeze"] = freeze_layers
+
     # Train or val.
     if args.mode == "train":
         custom_state_dict = None
@@ -197,13 +203,13 @@ def override_debug_params(args):
     }
     ball_sports_args = {
         # "model": "cfg/ball_sports/models/yolov8s_25kpts_2H.yaml",
-        "model": "runs/multi-head/train/20260131_165216_best/weights/best.pt",
-        "data": "cfg/ball_sports/datasets/25kpts_2H_Solid_Mosaic.yaml",
+        "model": "runs/multi-head/train/20260308_060807_best/weights/best.pt",
+        "data": "cfg/ball_sports/datasets/25kpts_2H_PersonBodyHead.yaml",
         "nkpts": 25,
         "act": "relu6",
         "device": "2",
         "override_hyp": ast.literal_eval(r"{ 'plots': False, 'scale': 0.6, 'albumentations': 1.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'cls': 1.0 ,'kobj': 0.25, 'rle': 0.5 }"),
-        "sparse": True,
+        "sparse": False,
         "sparse_mode": 2,
     }
     running_args = {
@@ -218,7 +224,7 @@ def override_debug_params(args):
         "sparse_mode": 0,
         "epochs": 1,
     }
-    args.__dict__.update(running_args)
+    args.__dict__.update(ball_sports_args)
     args.__dict__.update({
         "project": ".experiments"
     })

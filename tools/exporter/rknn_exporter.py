@@ -141,11 +141,14 @@ def export_rknn(
         )
 
     # Accuracy analysis
-    print(f"==> [Info] Accuracy analysis")
-    image_path = "/data5/yuanchengzhi/Datasets/SmartSports/Balls_3_NoPole/images/train/captures-1/vlc_record_2025_12_15_15h36m13s_rtsp___192_168_1_64_554_Streaming_channels_1__009375.jpg"
-    check_rknn(
-        rknn.accuracy_analysis(inputs=[image_path], output_dir=None)
-    )
+    try:
+        print(f"==> [Info] Accuracy analysis")
+        image_path = "/data5/yuanchengzhi/Datasets/SmartSports/Balls_FBV/images/train/captures-1/vlc_record_2025_12_15_15h15m02s_rtsp___192_168_1_64_554_Streaming_channels_1__002088.jpg"
+        check_rknn(
+            rknn.accuracy_analysis(inputs=[image_path], output_dir=None)
+        )
+    except Exception as e:
+        print(f"==> [Warning] Accuracy analysis failed: {e}")
 
     check_rknn(
         rknn.export_rknn(rknn_path)
@@ -195,9 +198,9 @@ ball_sports_config = ExportParams(
     # model_path="runs/_export/ball_sports/yolov8s_ball_fbvs_448x768_2H_fp32_sparse42_v260203_simplified.onnx",
     # model_path="/data4/yuanchengzhi/projects/ultralytics_fork/runs/multi-head/.experiments/20260205_190521_yolov8s_25kpts_2H/weights/TorchAO/model_torchao_qat.onnx",
     # model_path="runs/_export/ball_sports/yolov11s_ball_fbvs_448x768_2H_fp32_v260206.onnx",
-    model_path="runs/_export/ball_sports/yolov8s_ball_fbvs_448x768_2H_fp32_v260228.onnx",
-    rknn_path="runs/_export/rknn/ball_sports/hybrid/yolov8s_ball_fbvs_448x768_2H_rk3588_hybrid_v260228_1.rknn",
-    dataset_path="/data4/yuanchengzhi/projects/ultralytics_fork/tools/exporter/rknn_hybrid_quant/dataset.txt",
+    model_path="runs/_export/ball_sports/yolov8s_ball_fbvs_448x768_2H_fp32_v260308.onnx",
+    rknn_path="runs/_export/rknn/ball_sports/hybrid/yolov8s_ball_fbvs_448x768_2H_rk3588_hybrid_v260308.rknn",
+    dataset_path="/data4/yuanchengzhi/projects/ultralytics_fork/tools/exporter/rknn_hybrid_quant/dataset2.txt",
     # dataset_path="/data5/yuanchengzhi/Datasets/SmartSports/hybrid_datasets.txt",
     target_platform="rk3588",
     sparse_infer=False,
@@ -210,9 +213,6 @@ ball_sports_config = ExportParams(
         ['/model.21/cv3.1.0/cv3.1.0.0/act/Clip_output_0', 'ball_56x96'],
         ['/model.21/cv3.1.1/cv3.1.1.0/act/Clip_output_0', 'ball_28x48'],
         ['/model.21/cv3.1.2/cv3.1.2.0/act/Clip_output_0', 'ball_14x24'],
-        # ['/model.14/cv2/act/Clip_output_0', '/model.21/cv3.1.0/cv3.1.0.0/act/Clip_output_0'],
-        # ['/model.17/cv2/act/Clip_output_0', '/model.21/cv3.1.1/cv3.1.1.0/act/Clip_output_0'],
-        # ['/model.20/cv2/act/Clip_output_0', '/model.21/cv3.1.2/cv3.1.2.0/act/Clip_output_0'],
     ], 
 )
 

@@ -79,6 +79,19 @@ python main.py \
     --override_hyp "{ 'scale': 0.6, 'albumentations': 1.0, 'close_mosaic': 20, 'box': 10.0, 'dfl': 2.0, 'cls': 1.0 ,'kobj': 0.25, 'rle': 0.5 }" \
     --workers 8 --logging tensorboard # 0306
 
+python main.py \
+    --model runs/multi-head/train/20260306_171439_best/weights/best.pt \
+    --data cfg/ball_sports/datasets/25kpts_2H_Solid.yaml --mode train --nkpts 25 \
+    --device 2 --epochs 300 --batch 256 --imgsz 448 768 --act relu6 \
+    --override_hyp "{ 'scale': 0.6, 'albumentations': 1.0, 'close_mosaic': 20, 'box': 10.0, 'dfl': 2.0, 'cls': 1.0 ,'kobj': 0.25, 'rle': 0.5 }" \
+    --workers 8 --logging tensorboard # 0308
+
+python main.py \
+    --model runs/multi-head/train/20260308_060807_best/weights/best.pt \
+    --data cfg/ball_sports/datasets/25kpts_2H_Solid.yaml --mode train --nkpts 25 \
+    --device 0 --epochs 300 --batch 256 --imgsz 448 768 --act relu6 \
+    --override_hyp "{ 'scale': 0.6, 'albumentations': 1.0, 'close_mosaic': 20, 'box': 10.0, 'dfl': 2.0, 'cls': 1.0 ,'kobj': 0.25, 'rle': 0.5 }" \
+    --workers 8 --logging tensorboard # 0308
 
 # python main.py \
 #     --model runs/multi-head/train/20260131_165216_best/weights/best.pt \
