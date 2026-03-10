@@ -18,7 +18,7 @@ def run(args):
     os.environ["__global_args__val_period"] = "10"
     os.environ["__global_args__val_last_epochs"] = "10"
  
-    config = get_sports_qrcode_qat_config(args)
+    config = get_qat_config__BallSports(args)
     run_qat(config)
 
 def override_debug_params(args):

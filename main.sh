@@ -157,7 +157,7 @@ python main.py \
 
 
 
-
+cd .py375
 python main_qat.py \
     --model "../cfg/qrcode/models/yolov8s_19kpts_MergeRaiseHandAndStandUp.yaml" \
     --pretrained "../runs/multi-head/train/20260207_231833_yolov8s_19kpts_MergeRaiseHandAndStandUp/weights/best.pt" \
@@ -166,6 +166,7 @@ python main_qat.py \
     --override_hyp "{ 'scale': 0.6, 'fliplr': 0.0, 'albumentations': 0.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'rle': 0.75 }" \
     --workers 8 --logging tensorboard
 
+cd .py375
 python main_qat.py \
     --model "../cfg/qrcode/models/yolov8s_19kpts.yaml" \
     --pretrained "../runs/multi-head/qrcode/20260209_192404_yolov8s_19kpts/weights/best.pt" \

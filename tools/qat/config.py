@@ -21,7 +21,7 @@ def get_overrides(args):
     kwargs.update(args.override_hyp)
     return kwargs
 
-def get_ball_sports_qat_config(args):
+def get_qat_config__BallSports(args):
     def _forward_function(self, x: List[torch.Tensor]):
         box0 = [self.cv2[0][i](x[i]) for i in range(self.nl)]
         box1 = [self.cv2[1][i](x[i]) for i in range(self.nl)]
@@ -99,7 +99,7 @@ def get_ball_sports_qat_config(args):
     )
     return config
 
-def get_student_qrcode_qat_config(args):
+def get_qat_config__Code_Match_MergeActions(args):
     def _forward_function(self, x: List[torch.Tensor]):
         box0 = [self.cv2[0][i](x[i]) for i in range(self.nl)]
         box1 = [self.cv2[1][i](x[i]) for i in range(self.nl)]
@@ -206,9 +206,27 @@ def get_student_qrcode_qat_config(args):
             inference_qat=_inference_qat,
         ),
     )
+
+    # sophgo_kwargs = {
+    #     "prepare_custom_config_dict": {
+    #         "extra_quantizer_dict": {
+    #             "exclude_node_name": [
+    #                 "cat_12", "cat_13", "cat_14", 
+    #                 "cat_15", "cat_16", "cat_17", 
+    #                 "cat_18", "cat_19", "cat_20", 
+    #                 "cat_21", "cat_22", "cat_23", 
+    #                 "cat_24", "cat_25", "cat_26",
+    #                 "cat_27", "cat_28", "cat_29",
+    #             ]
+    #         }
+    #     },
+    #     "chip": "BM1688",
+    # }
+    # config.custom_kwargs = sophgo_kwargs
+
     return config
 
-def get_student_qrcode_qat_config_2(args):
+def get_qat_config__Code_Match(args):
     def _forward_function(self, x: List[torch.Tensor]):
         box0 = [self.cv2[0][i](x[i]) for i in range(self.nl)]
         box1 = [self.cv2[1][i](x[i]) for i in range(self.nl)]
