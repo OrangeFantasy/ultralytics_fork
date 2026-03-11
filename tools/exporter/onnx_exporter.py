@@ -53,7 +53,6 @@ def export_student_qrcode(self, x):
 
     cv2_1 = [self.cv2[1][i](x[i]) for i in range(self.nl)]
     cv3_1 = [self.cv3[1][i](x[i]) for i in range(self.nl)]
-
     kpt_0 = [self.cv4[i](x[i]) for i in range(self.nl)]  # (bs, 17*3, h*w)
     kpt_0 = [self.cv4_kpts[i](kpt_0[i]) for i in range(self.nl)]  # (bs, 17*3, h*w)
 
@@ -86,8 +85,9 @@ def export_student_qrcode(self, x):
 student_qrcode_config = ExportParams(
     # model_path="runs/mdetectors_qrcode/20260126_add_match/weights/best.pt",
     # model_path="runs/multi-head/train/20260207_231833_yolov8s_19kpts_MergeRaiseHandAndStandUp/weights/best.pt",
-    model_path="runs/multi-head/qrcode/20260209_192315_yolov8s_19kpts_MergeRaiseHandAndStandUp/weights/best.pt",
-    onnx_path="runs/_export/smart_classroom/student_448x768_qrcode_20260209.fp32.onnx",
+    # model_path="runs/multi-head/qrcode/20260209_192315_yolov8s_19kpts_MergeRaiseHandAndStandUp/weights/best.pt",
+    model_path="runs/multi-head/train/20260310_205410_yolov8s_19kpts_MergeRaiseHandAndStandUp/weights/last.pt",
+    onnx_path="runs/_export/smart_classroom/student_448x768_qrcode_20260310.fp32.onnx",
     task="multi-detectors",
     input_shape=(1, 3, 448, 768),
     input_names=["input"],
@@ -241,4 +241,4 @@ def export_onnx(params: ExportParams):
     print(f"==> Convert done, model saved to: {onnx_path}")
 
 if __name__ == "__main__":
-    export_onnx(ball_448x768_2H_config)
+    export_onnx(student_qrcode_config)

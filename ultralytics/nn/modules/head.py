@@ -1931,7 +1931,7 @@ class MultiHead(Pose26):
                         for i in range(self.nl)
                     ], dim=2)
                 )
-            preds["angles"] = torch.cat(angles, dim=1)
+            preds["angles"] = torch.cat(angles, dim=1).sigmoid()
         return preds
 
     def _Detect_forward_head(
