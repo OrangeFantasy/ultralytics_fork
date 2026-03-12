@@ -4,7 +4,6 @@ from pathlib import Path
 
 import importlib
 import io
-import os
 from copy import copy, deepcopy
 from datetime import datetime
 from functools import partial
@@ -12,28 +11,36 @@ from functools import partial
 import torch
 from torch.utils.data import DataLoader
 
-from ultralytics.models import yolo
-from ultralytics.nn.modules.block import C2f
 from ultralytics.nn.tasks import load_checkpoint
-from ultralytics.utils import __version__, DEFAULT_CFG, DEFAULT_CFG_DICT, LOCAL_RANK, LOGGER, ops
-from ultralytics.utils.torch_utils import unwrap_model
-
-# def C2f_forward(self, x: torch.Tensor) -> torch.Tensor:
-#     # NOTE: Default quantization. For SOPHGO and AMCT.
-#     # y = list(self.cv1(x).chunk(2, 1))
-#     y = self.cv1(x)
-#     y1, y2 = y.split(y.size(1) // 2, dim=1)
-#     y = [y1, y2]
-#     y.extend(m(y[-1]) for m in self.m)
-#     return self.cv2(torch.cat(y, 1))
-# C2f.forward = C2f_forward
-
+from ultralytics.utils import __version__, DEFAULT_CFG, LOCAL_RANK, LOGGER
 
 from ultralytics.nn.tasks import MultiHeadModel
 from ultralytics.models.yolo.multi_head import MultiHeadTrainer, MultiHeadValidator, MultiHeadPredictor
 _QAT_Model, _QAT_Trainer, _QAT_Validator, _QAT_Predictor = (
     MultiHeadModel, MultiHeadTrainer, MultiHeadValidator, MultiHeadPredictor
 )
+
+def patch_for_fx_tracing():
+    """
+    Patch the forward method of C2f to make it compatible with torch.fx tracing.
+
+    The original C2f implementation in Ultralytics uses `Tensor.chunk`,
+    which may cause tracing issues when the model is captured by the
+    torch.fx graph (e.g., during quantization pipelines or graph rewriting).
+    This patch replaces the `chunk` operation with `split`, ensuring the
+    computation graph can be correctly traced by the FX system without errors.
+    """
+
+    from ultralytics.nn.modules.block import C2f
+    def C2f_forward(self, x: torch.Tensor) -> torch.Tensor:
+        # NOTE: Default quantization. For SOPHGO and AMCT.
+        # y = list(self.cv1(x).chunk(2, 1))
+        y = self.cv1(x)
+        y1, y2 = y.split(y.size(1) // 2, dim=1)
+        y = [y1, y2]
+        y.extend(m(y[-1]) for m in self.m)
+        return self.cv2(torch.cat(y, 1))
+    C2f.forward = C2f_forward
 
 class QAT_Model(_QAT_Model):
     def forward(self, x):
@@ -129,7 +136,7 @@ class QAT_Pipeline(_QAT_Trainer):
     def get_calibration_dataloader(self, batch_size: int | None) -> tuple[DataLoader, Callable[[Any], torch.Tensor]]:
         # NOTE: batch_size = 64
         loader = self.get_dataloader(
-            self.data["train"], batch_size=batch_size or self.batch_size, rank=LOCAL_RANK, mode="train"
+            self.data["train"], batch_size=batch_size or self.batch_size, rank=LOCAL_RANK, mode="val"
         )
         preprocess_function = lambda batch: self.preprocess_batch(batch)["img"]
         return loader, preprocess_function
@@ -204,7 +211,9 @@ class QAT_Pipeline(_QAT_Trainer):
 
         args = copy(self.args)
         for k, v in kwargs.items():
-            assert hasattr(args, k), f"args has no attribute {k}"
+            if not hasattr(args, k):
+                print(f"[QAT] key={k} not in self.args, skipped.")
+                continue
             setattr(args, k, v)
 
         validator = self.get_validator(loss_names, args)

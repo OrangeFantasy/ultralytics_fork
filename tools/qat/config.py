@@ -21,6 +21,11 @@ def get_overrides(args):
     kwargs.update(args.override_hyp)
     return kwargs
 
+def default_inference_qat(self, preds):
+    preds = self.forward_qat(self, preds)
+    y = self._inference(preds)
+    return (y, preds)
+
 def get_qat_config__BallSports(args):
     def _forward_function(self, x: List[torch.Tensor]):
         box0 = [self.cv2[0][i](x[i]) for i in range(self.nl)]
@@ -59,7 +64,7 @@ def get_qat_config__BallSports(args):
         cls0 = torch.cat([cls0[i].view(bs, self.nc_per_head[0], -1) for i in range(self.nl)], dim=-1)
         cls1 = torch.cat([cls1[i].view(bs, self.nc_per_head[1], -1) for i in range(self.nl)], dim=-1)
         kpts = torch.cat([kpts[i].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1)
-        angs = torch.cat([angs[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1)
+        angs = torch.cat([angs[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
 
         return dict(
             feats=list(feats),
@@ -69,11 +74,6 @@ def get_qat_config__BallSports(args):
             angles=angs
         )
 
-    def _inference_qat(self, preds):
-        preds = self.forward_qat(self, preds)
-        y = self._inference(preds)
-        return (y, preds)
-    
     config = QAT_Config(
         platform=args.platform or "rknn",
         overrides=get_overrides(args),
@@ -94,7 +94,7 @@ def get_qat_config__BallSports(args):
         qat_functions=QAT_Functions(
             forward=_forward_function,
             forward_qat=_forward_qat,
-            inference_qat=_inference_qat,
+            inference_qat=default_inference_qat,
         ),
     )
     return config
@@ -164,8 +164,8 @@ def get_qat_config__Code_Match_MergeActions(args):
         cls4 = torch.cat([cls4[i].view(bs, self.nc_per_head[4], -1) for i in range(self.nl)], dim=-1)
         cls5 = torch.cat([cls5[i].view(bs, self.nc_per_head[5], -1) for i in range(self.nl)], dim=-1)
         kpts = torch.cat([kpts[i].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1)
-        ang0 = torch.cat([ang0[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1)
-        ang1 = torch.cat([ang1[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1)
+        ang0 = torch.cat([ang0[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
+        ang1 = torch.cat([ang1[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
 
         return dict(
             feats=list(feats),
@@ -174,11 +174,6 @@ def get_qat_config__Code_Match_MergeActions(args):
             kpts=kpts,
             angles=torch.cat([ang0, ang1], 1),
         )
-
-    def _inference_qat(self, preds):
-        preds = self.forward_qat(preds)
-        y = self._inference(preds)
-        return (y, preds)
 
     config = QAT_Config(
         platform=args.platform or "Ascend",
@@ -203,26 +198,9 @@ def get_qat_config__Code_Match_MergeActions(args):
         qat_functions=QAT_Functions(
             forward=_forward_function,
             forward_qat=_forward_qat,
-            inference_qat=_inference_qat,
+            inference_qat=default_inference_qat,
         ),
     )
-
-    # sophgo_kwargs = {
-    #     "prepare_custom_config_dict": {
-    #         "extra_quantizer_dict": {
-    #             "exclude_node_name": [
-    #                 "cat_12", "cat_13", "cat_14", 
-    #                 "cat_15", "cat_16", "cat_17", 
-    #                 "cat_18", "cat_19", "cat_20", 
-    #                 "cat_21", "cat_22", "cat_23", 
-    #                 "cat_24", "cat_25", "cat_26",
-    #                 "cat_27", "cat_28", "cat_29",
-    #             ]
-    #         }
-    #     },
-    #     "chip": "BM1688",
-    # }
-    # config.custom_kwargs = sophgo_kwargs
 
     return config
 
@@ -297,8 +275,8 @@ def get_qat_config__Code_Match(args):
         cls5 = torch.cat([cls5[i].view(bs, self.nc_per_head[5], -1) for i in range(self.nl)], dim=-1)
         cls6 = torch.cat([cls6[i].view(bs, self.nc_per_head[6], -1) for i in range(self.nl)], dim=-1)
         kpts = torch.cat([kpts[i].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1)
-        ang0 = torch.cat([ang0[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1)
-        ang1 = torch.cat([ang1[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1)
+        ang0 = torch.cat([ang0[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
+        ang1 = torch.cat([ang1[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
 
         return dict(
             feats=list(feats),
@@ -307,11 +285,6 @@ def get_qat_config__Code_Match(args):
             kpts=kpts,
             angles=torch.cat([ang0, ang1], 1),
         )
-
-    def _inference_qat(self, preds):
-        preds = self.forward_qat(preds)
-        y = self._inference(preds)
-        return (y, preds)
 
     config = QAT_Config(
         platform=args.platform or "Ascend",
@@ -337,7 +310,213 @@ def get_qat_config__Code_Match(args):
         qat_functions=QAT_Functions(
             forward=_forward_function,
             forward_qat=_forward_qat,
-            inference_qat=_inference_qat,
+            inference_qat=default_inference_qat,
         ),
     )
+    return config
+
+def get_qat_config__Student_MergeActions(args):
+    def _forward_function(self, x: List[torch.Tensor]):
+        box0 = [self.cv2[0][i](x[i]) for i in range(self.nl)]  # head
+        box1 = [self.cv2[1][i](x[i]) for i in range(self.nl)]  # body
+        box2 = [self.cv2[2][i](x[i]) for i in range(self.nl)]  # actions
+        box3 = [self.cv2[3][i](x[i]) for i in range(self.nl)]  # face
+
+        cls0 = [self.cv3[0][i](x[i]) for i in range(self.nl)]  # head
+        cls1 = [self.cv3[1][i](x[i]) for i in range(self.nl)]  # body
+        cls2 = [self.cv3[2][i](x[i]) for i in range(self.nl)]  # actions
+        cls3 = [self.cv3[3][i](x[i]) for i in range(self.nl)]  # face
+
+        pose = [self.cv4[i](x[i]) for i in range(self.nl)]
+        kpts = [self.cv4_kpts[i](pose[i]) for i in range(self.nl)]
+
+        ang0 = [self.cv5[0][i](x[i]) for i in range(self.nl)]
+        ang1 = [self.cv5[1][i](x[i]) for i in range(self.nl)]
+
+        x0 = [torch.cat((box0[i], cls0[i], ang0[i]), 1) for i in range(self.nl)]
+        x1 = [torch.cat((box1[i], cls1[i], kpts[i]), 1) for i in range(self.nl)]
+        x2 = [torch.cat((box2[i], cls2[i]), 1) for i in range(self.nl)]
+        x3 = [torch.cat((box3[i], cls3[i], ang1[i]), 1) for i in range(self.nl)]
+        if self.export:
+            return (*x0, *x1, *x2, *x3)
+        return (*x, *x0, *x1, *x2, *x3)
+
+    def _forward_qat(self, preds):
+        feats = preds[0:3]
+        x0, x1, x2, x3, = (
+            tuple(preds[i * self.nl : (i + 1) * self.nl])
+            for i in range(1, 1 + len(preds[3:]) // self.nl)
+        )
+        
+        box0, cls0, ang0, box1, cls1, kpts, box2, cls2, box3, cls3, ang1 = map(list, zip(*[
+            (
+                *x0_ls.split((4 * self.reg_max, self.nc_per_head[0], self.n_angles), 1),
+                *x1_ls.split((4 * self.reg_max, self.nc_per_head[1], self.nk), 1),
+                *x2_ls.split((4 * self.reg_max, self.nc_per_head[2]), 1),
+                *x3_ls.split((4 * self.reg_max, self.nc_per_head[3], self.n_angles), 1),
+            )
+            for x0_ls, x1_ls, x2_ls, x3_ls in zip(x0, x1, x2, x3)
+        ]))
+
+        bs = feats[0].shape[0]
+        box0 = torch.cat([box0[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
+        box1 = torch.cat([box1[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
+        box2 = torch.cat([box2[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
+        box3 = torch.cat([box3[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
+        cls0 = torch.cat([cls0[i].view(bs, self.nc_per_head[0], -1) for i in range(self.nl)], dim=-1)
+        cls1 = torch.cat([cls1[i].view(bs, self.nc_per_head[1], -1) for i in range(self.nl)], dim=-1)
+        cls2 = torch.cat([cls2[i].view(bs, self.nc_per_head[2], -1) for i in range(self.nl)], dim=-1)
+        cls3 = torch.cat([cls3[i].view(bs, self.nc_per_head[3], -1) for i in range(self.nl)], dim=-1)
+        kpts = torch.cat([kpts[i].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1)
+        ang0 = torch.cat([ang0[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
+        ang1 = torch.cat([ang1[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
+
+        return dict(
+            feats=list(feats),
+            boxes=torch.cat([box0, box1, box2, box3], 1),
+            scores=torch.cat([cls0, cls1, cls2, cls3], 1),
+            kpts=kpts,
+            angles=torch.cat([ang0, ang1], 1),
+        )
+
+    config = QAT_Config(
+        platform=args.platform,
+        overrides=get_overrides(args),
+        model_fp_weights=args.pretrained,
+        # model_qat_weights="runs/multi-head/.experiments/20260312_171516_yolov8s-19kpts_Student_MergeActions/weights/last.pt",
+        val_config=ValConfig(
+            enable=True,
+        ),
+        export_config=ExportConfig(
+            enable=True,
+            input_names=["input"],
+            output_names=[
+                "head_96", "head_48", "head_24",
+                "body_96", "body_48", "body_24",
+                "action_96", "action_48", "action_24",
+                "face_96", "face_48", "face_24",
+            ],
+        ),
+        qat_functions=QAT_Functions(
+            forward=_forward_function,
+            forward_qat=_forward_qat,
+            inference_qat=default_inference_qat,
+        ),
+    )
+
+    if args.platform.lower() in ["sophgo", "nvidia"]:
+        config.calibrate_config = CalibrateConfig(
+            enable=True,
+            batch_size=64,
+            num_batch=100,
+        )
+    if args.platform.lower() == "sophgo":
+        config.custom_kwargs = {
+            "prepare_custom_config_dict": {
+                "quant_dict": {
+                    "chip": args.sophgo_chip,
+                    "quantmode": "weight_activation",
+                    "strategy": "CNN",
+                },
+                "extra_quantizer_dict": {
+                    "exclude_node_name": [
+                        "cat_12", "cat_13", "cat_14", 
+                        "cat_15", "cat_16", "cat_17", 
+                        "cat_18", "cat_19", "cat_20", 
+                        "cat_21", "cat_22", "cat_23", 
+                    ]
+                }
+            },
+            "chip": args.sophgo_chip,
+        }
+
+    return config
+
+def get_qat_config__Teacher(args):
+    def _forward_function(self, x: List[torch.Tensor]):
+        box0 = [self.cv2[0][i](x[i]) for i in range(self.nl)]
+        cls0 = [self.cv3[0][i](x[i]) for i in range(self.nl)]
+
+        pose = [self.cv4[i](x[i]) for i in range(self.nl)]
+        kpts = [self.cv4_kpts[i](pose[i]) for i in range(self.nl)]
+        angles = [self.cv5[0][i](x[i]) for i in range(self.nl)]
+
+        x0 = [self.float_cat([box0[l], cls0[l], kpts[l], angles[l]], dim=1) for l in range(self.nl)]
+        if self.export:
+            return (*x0, )
+        return (*x, *x0)
+    
+    def _forward_qat(self, preds):
+        feats = preds[0:3]
+        x0 = (
+            tuple(preds[i * self.nl : (i + 1) * self.nl])
+            for i in range(1, 1 + len(preds[3:]) // self.nl)
+        )
+
+        box0, cls0, kpts, angs = map(list, zip(*[
+            (
+                *x0_ls.split((4 * self.reg_max, self.nc_per_head[0], self.nk, self.n_angles), 1),
+            )
+            for x0_ls in zip(x0)
+        ]))
+
+        bs = feats[0].shape[0]
+        box0 = torch.cat([box0[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
+        cls0 = torch.cat([cls0[i].view(bs, self.nc_per_head[0], -1) for i in range(self.nl)], dim=-1)
+        kpts = torch.cat([kpts[i].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1)
+        angs = torch.cat([angs[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
+
+        return dict(
+            feats=list(feats),
+            boxes=box0,
+            scores=cls0,
+            kpts=kpts,
+            angles=angs
+        )
+
+    config = QAT_Config(
+        platform=args.platform,
+        overrides=get_overrides(args),
+        model_fp_weights=args.pretrained,
+        # model_qat_weights="/data4/yuanchengzhi/projects/yolo/MultiTaskDetector/runs/multi-head/qat/20260209_165633_yolov8s_25kpts_2H/weights/last.pt",
+        val_config=ValConfig(
+            enable=True,
+        ),
+        export_config=ExportConfig(
+            enable=True,
+            input_names=["input"],
+            output_names=[
+                "box_cls_kpt_angle_96", "box_cls_kpt_angle_48", "box_cls_kpt_angle_24",
+            ],
+        ),
+        qat_functions=QAT_Functions(
+            forward=_forward_function,
+            forward_qat=_forward_qat,
+            inference_qat=default_inference_qat,
+        ),
+    )
+
+    if args.platform.lower() in ["sophgo", "nvidia"]:
+        config.calibrate_config = CalibrateConfig(
+            enable=True,
+            batch_size=64,
+            num_batch=100,
+        )
+    if args.platform.lower() == "sophgo":
+        config.custom_kwargs = {
+            "prepare_custom_config_dict": {
+                "quant_dict": {
+                    "chip": args.sophgo_chip,
+                    "quantmode": "weight_activation",
+                    "strategy": "CNN",
+                },
+                "extra_quantizer_dict": {
+                    "exclude_node_name": [
+                        "cat_12", "cat_13", "cat_14" 
+                    ]
+                }
+            },
+            "chip": args.sophgo_chip,
+        }
+
     return config

@@ -23,11 +23,7 @@ class Nvidia_Pipeline(QAT_Pipeline):
         **ignore_kwargs
     ):
         from absl import logging
-        logging.set_verbosity(logging.INFO)
-
-        # torch.use_deterministic_algorithms(mode=False)
-        # quant_nn.QuantConv2d.set_default_quant_desc_input(QuantDescriptor(calib_method="histogram"))
-        # quant_nn.QuantConv2d.set_default_quant_desc_weight(QuantDescriptor(calib_method="histogram"))  # NOTE: should be "max"?
+        logging.set_verbosity(logging.WARNING)
         quant_modules.initialize()
 
     def prepare(
@@ -87,14 +83,18 @@ class Nvidia_Pipeline(QAT_Pipeline):
                     if module._calibrator is not None:
                         if isinstance(module._calibrator, calib.MaxCalibrator):
                             # NOTE: strict default is True, strict=False avoid Exception when some quantizer are never used?
-                            module.load_calib_amax()
+                            try:
+                                module.load_calib_amax()
+                            except:
+                                print(f"==> [Nvidia] {name} load_calib_amax caused Exception, try strict=False.")
+                                module.load_calib_amax(strict=False)
                         else:
                             module.load_calib_amax(**kwargs)
                         module._amax = module._amax.to(device)
 
         calibration_loader, preprocess_function = self.get_calibration_dataloader(batch_size)
         print("==> [Nvidia] calibrate ...")
-        print("==> [Nvidia] If the message “Calibrator encountered negative values. It shouldn't happen after ReLU.” appears, "
+        print("==> [Nvidia] If the message 'Calibrator encountered negative values. It shouldn't happen after ReLU.' appears, "
             "it is most likely caused by `MaxCalibrator` during weight collection, and there’s no need to worry. "
         )
         with torch.no_grad():

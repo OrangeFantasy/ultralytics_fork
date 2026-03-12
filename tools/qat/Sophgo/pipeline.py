@@ -7,13 +7,20 @@ from tqdm import tqdm
 import torch
 from torch import fx
 
-from sophgo_mq.convert_deploy import convert_deploy
-from sophgo_mq.prepare_by_platform import prepare_by_platform
-from sophgo_mq.utils.state import enable_calibration, enable_quantization
+from tpu_mq.convert_deploy import convert_deploy
+from tpu_mq.prepare_by_platform import prepare_by_platform
+from tpu_mq.utils.state import enable_calibration, enable_quantization
 
-from ..pipeline import QAT_Pipeline
+from ..pipeline import QAT_Pipeline, patch_for_fx_tracing
 
 class Sophgo_Pipeline(QAT_Pipeline):
+    def initialize_env(
+        self, 
+        **ignore_kwargs
+    ):
+        print("==> [SOPHGO] initialize_env ...")
+        patch_for_fx_tracing()
+
     def prepare(
         self, 
         model_fp: torch.nn.Module, 
@@ -25,9 +32,8 @@ class Sophgo_Pipeline(QAT_Pipeline):
         print("==> [SOPHGO] prepare_by_platform ...")
         model_fp.train()
 
-        # NOTE: prepare_by_platform params 'input_shape_dict' is a list, not a dict
         input_shapes = [[1, 3, *self.overrides["imgsz"]]]
-        model_qat = prepare_by_platform(model_fp, input_shapes, prepare_custom_config_dict)
+        model_qat = prepare_by_platform(model_fp, input_shapes, prepare_custom_config_dict=prepare_custom_config_dict)
 
         if qat_weights is not None:
             weights = torch.load(qat_weights, map_location="cpu", weights_only=True)
@@ -78,7 +84,7 @@ class Sophgo_Pipeline(QAT_Pipeline):
         input_shape_dict = { "input": [1, 3, *self.args.imgsz] }
         convert_deploy(
             model_qat, net_type, input_shape_dict,
-            output_path=save_path, model_name="sophgo", deploy=True, chip=chip, 
+            output_path=save_path, model_name="sophgo", mlir_deploy=False, chip=chip, 
             input_names=input_names, output_names=output_names, dynamic_axes=dynamic_axes
         )
-        print(f"==> [SOPHGO]: convert_deploy to {save_path} ...")
+        print(f"==> [SOPHGO]: convert_deploy to {save_path}.")
