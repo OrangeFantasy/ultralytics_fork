@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "../../opt/conda/lib/python3.7/site-packages/tpu-mq-1.0.0-py3.7.egg/tpu_mq"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {}
+}

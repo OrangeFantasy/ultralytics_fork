@@ -1,0 +1,42 @@
+name: Push Test
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+          ref: ${{ github.event.pull_request.head.sha }}
+    - name: Print PR number and title
+      run: |
+        echo "PR number: ${{ github.event.pull_request.number }}"
+        echo "PR title: ${{ github.event.pull_request.title }}"
+        echo "Current branch: ${{ github.ref }}"
+        CURRENT_BRANCH=$(echo ${{ github.ref }} | sed 's|^refs/heads/||')
+        echo "Current branch name: $CURRENT_BRANCH"        
+    - name: Cache Docker images
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.docker
+        key: ${{ runner.os }}-docker-${{ hashFiles('**/Dockerfile*') }}
+
+    - name: Run Tests in Docker
+      run: |
+        pwd
+        ls
+        docker run -v  "$(pwd):/workspace" bernardxu6034/sgmq_base:v1 bash -c \
+        "
+        pwd
+        ls
+        pip show tpu_mq
+        python setup.py install
+        cd test
+        bash run_test_demo.sh
+        "
