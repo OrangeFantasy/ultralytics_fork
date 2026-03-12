@@ -30,6 +30,7 @@ def parse_args():
 
     parser.add_argument("--nkpts", type=int, default=25)
     parser.add_argument("--teacher_view", action="store_true", default=False)
+    parser.add_argument("--class_ranges", type=str, default=None)
 
     parser.add_argument("--device", type=str, default="3")
     parser.add_argument("--epochs", type=int, default=100)
@@ -95,8 +96,11 @@ def initlize_global_args(args):
     elif args.nkpts == 19:
         loss.OKS_SIGMA = _OKS_SIGMA[args.nkpts]
         os.environ["__global_args__oks_sigma"] = np.array2string(loss.OKS_SIGMA)
-        class_ranges = np.array([[0, 0], [1, 5], [2, 5], [6, 6], [7, 10], [11, 11]], dtype=np.int32)
-        # class_ranges = np.array([[0, 0], [1, 5], [2, 3], [4, 5], [6, 6], [7, 10], [11, 11]], dtype=np.int32)
+        try:
+            class_ranges = np.array(eval(args.class_ranges), dtype=np.int32)
+        except Exception as ex:
+            print("==> Parse class_ranges failed. Format like: [[0, 0], [1, 5], [6, 6], [7, 10], [11, 11]]")
+            raise ex
         os.environ["__global_args__multi_head_class_ranges"] = np.array2string(class_ranges.reshape(-1))
         os.environ["__global_args__img2label_paths_sa"] = "zhaolixiang/dataset/multi_task_dataset/trainval/trainval_multi_task_with_action_labels/images"
         os.environ["__global_args__img2label_paths_sb"] = "yuanchengzhi/datasets/SmartClassroom/StandUp_remarked/labels"
@@ -165,7 +169,7 @@ def run(args):
         "conf": args.conf, "iou": args.iou, 
         "cache": False, "patience": 0, "plots": True, "save": True, "save_period": 20, "verbose": True, 
         "exist_ok": args.overwrite,
-        "project": args.project or f"{args.mode}", 
+        "project": args.project if args.project is not None else f"{args.mode}", 
         "name": datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + (args.name or args.model.split("/")[-1].split(".")[0]),
     }
     kwargs.update(args.override_hyp)

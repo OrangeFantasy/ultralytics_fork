@@ -783,8 +783,8 @@ class Model(torch.nn.Module):
             model_state_dict = unwrap_model(self.model).state_dict()
             unexcepted_keys = set(loaded_state_dict.keys()) - set(model_state_dict.keys())
             matched_state_dict = intersect_dicts(loaded_state_dict, model_state_dict)
-            unmatched_keys = set(loaded_state_dict.keys()) - set(matched_state_dict.keys())
             missing_keys, _ = unwrap_model(self.model).load_state_dict(matched_state_dict, strict=False)
+            unmatched_keys = set(loaded_state_dict.keys()) - set(matched_state_dict.keys()) - set(unexcepted_keys) - set(missing_keys)
 
             if missing_keys:
                 LOGGER.info(f"{colorstr('red', 'bold', '==> Missing keys:')} {missing_keys}")
