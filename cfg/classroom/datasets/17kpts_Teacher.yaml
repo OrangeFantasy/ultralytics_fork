@@ -1,0 +1,30 @@
+path: /data4/yuanchengzhi/datasets/teacher_view_dataset/trainval/ # dataset root dir
+train: labels/train.txt # train images (relative to 'path') 39384 images
+val: labels/val.txt # val images (relative to 'path') 15062 images
+
+# Keypoints
+kpt_shape: [17, 3]  # [number of keypoints, number of dim]
+flip_idx: [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
+
+n_angles: 3
+n_extra_props: 0  # number of extra properties
+
+heads: ["pose-angle"]
+nc_per_head: [6]
+
+coco_jdict_index: [0, 1, 2, 2, 3, 2]
+coco_category_id: [1, 1, 1, 2, 1, 1, 3]
+coco_annotations: 
+  - annotations/head_infoes.json  # val_annotations_detector_0
+  - annotations/body_infoes.json  # val_annotations_detector_1
+  - annotations/tvbb_infoes.json
+  - annotations/face_infoes.json
+
+# Classes
+names:
+  0: Head
+  1: Body
+  2: WB_Open
+  3: BB
+  4: Face
+  5: WB_Close

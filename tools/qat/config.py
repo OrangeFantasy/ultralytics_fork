@@ -1,4 +1,4 @@
-from typing import List
+from functools import partial
 
 import datetime
 import torch
@@ -15,65 +15,99 @@ def get_overrides(args):
         "optimizer": "auto",   "lr0"   : 0.01 * 0.01, "lrf"  : 0.05,
         "mosaic": 0.0,         "fliplr": 0.5,         "scale": 0.6,         
         "plots" : True,        "save_period": 5,      "val"  : False,
-        "project": args.project or "qat",
+        "project": args.project if args.project is not None else "qat",
         "name": datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + (args.name or args.model.split("/")[-1].split(".")[0]),
     }
     kwargs.update(args.override_hyp)
     return kwargs
 
-def default_inference_qat(self, preds):
-    preds = self.forward_qat(self, preds)
+def _default_forward_function(self, x: list[torch.Tensor], ff_cat: bool = False) -> tuple[torch.Tensor]:
+    cat_function = self.ff_cat if ff_cat else torch.cat
+
+    boxes = [
+        [self.cv2[head_idx][i](x[i]) for i in range(self.nl)] 
+        for head_idx in range(self.n_heads)
+    ]
+    scores  = [
+        [self.cv3[head_idx][i](x[i]) for i in range(self.nl)] 
+        for head_idx in range(self.n_heads)
+    ]
+
+    kpts = None
+    if self.n_pose_heads > 0:
+        pose_feats = [self.cv4[i](x[i]) for i in range(self.nl)]
+        kpts = [self.cv4_kpts[i](pose_feats[i]) for i in range(self.nl)]
+
+    angles = None
+    if self.n_angle_heads > 0:
+        angles = [
+            [self.cv5[h][i](x[i]) for i in range(self.nl)] 
+            for h in range(self.n_angle_heads)
+        ]
+
+    preds = []
+    angle_idx = 0
+    for head_idx, head_type in enumerate(self.heads):
+        for i in range(self.nl):
+            pred = [boxes[head_idx][i], scores[head_idx][i]]
+            if   head_type == "pose":
+                pred.append(kpts[i])
+            elif head_type == "angle":
+                pred.append(angles[angle_idx][i])
+            elif head_type == "pose-angle":
+                pred.append(kpts[i])
+                pred.append(angles[angle_idx][i])
+            preds.append(cat_function(pred, 1))
+        if head_type in ["angle", "pose-angle"]:
+            angle_idx += 1
+
+    if self.export:
+        return (*preds, )
+    return (*x, *preds)
+
+def _default_forward_qat(self, preds: tuple[torch.Tensor]) -> dict[str, torch.Tensor | None]:
+    bs = preds[0].shape[0]
+
+    feats = preds[:self.nl]
+    head_preds = [
+        preds[self.nl + i*self.nl : self.nl + (i+1)*self.nl]
+        for i in range(self.n_heads)
+    ]
+
+    boxes, scores, kpts, angles = [], [], [], []
+    for head_idx, head_type in enumerate(self.heads):
+        curr_head_preds = head_preds[head_idx]
+        split_sizes = [4 * self.reg_max, self.nc_per_head[head_idx]]
+        if head_type in ["pose", "pose-angle"]:
+            split_sizes.append(self.nk)
+        if head_type in ["angle", "pose-angle"]:
+            split_sizes.append(self.n_angles)
+        splitted = [pred.split(split_sizes, 1) for pred in curr_head_preds]  # box, cls, kpts (optional), angle (optional)
+
+        boxes.append(torch.cat([splitted[i][0].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1))
+        scores.append(torch.cat([splitted[i][1].view(bs, self.nc_per_head[head_idx], -1) for i in range(self.nl)], dim=-1))
+        if head_type == "angle":
+            angles.append(torch.cat([splitted[i][2].view(bs, self.n_angles, -1).sigmoid() for i in range(self.nl)], dim=-1))
+        elif head_type == "pose":
+            kpts.append(torch.cat([splitted[i][2].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1))
+        elif head_type == "pose-angle":
+            kpts.append(torch.cat([splitted[i][2].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1))
+            angles.append(torch.cat([splitted[i][3].view(bs, self.n_angles, -1).sigmoid() for i in range(self.nl)], dim=-1))
+
+    return dict(
+        feats=list(feats),
+        boxes=torch.cat(boxes, dim=1),
+        scores=torch.cat(scores, dim=1),
+        kpts=torch.cat(kpts, dim=1) if kpts else None,
+        angles=torch.cat(angles, dim=1) if angles else None,
+    )
+
+def _default_inference_qat(self, preds):
+    preds = self.forward_qat(preds)
     y = self._inference(preds)
     return (y, preds)
 
 def get_qat_config__BallSports(args):
-    def _forward_function(self, x: List[torch.Tensor]):
-        box0 = [self.cv2[0][i](x[i]) for i in range(self.nl)]
-        box1 = [self.cv2[1][i](x[i]) for i in range(self.nl)]
-        cls0 = [self.cv3[0][i](x[i]) for i in range(self.nl)]
-        cls1 = [self.cv3[1][i](x[i]) for i in range(self.nl)]
-
-        pose = [self.cv4[i](x[i]) for i in range(self.nl)]
-        kpts = [self.cv4_kpts[i](pose[i]) for i in range(self.nl)]
-        angles = [self.cv5[0][i](x[i]) for i in range(self.nl)]
-
-        x0 = [self.float_cat([box0[l], cls0[l], kpts[l], angles[l]], dim=1) for l in range(self.nl)]
-        x1 = [self.float_cat([box1[l], cls1[l]], dim=1) for l in range(self.nl)]
-        if self.export:
-            return (*x0, *x1)
-        return (*x, *x0, *x1)
-    
-    def _forward_qat(self, preds):
-        feats = preds[0:3]
-        x0, x1 = (
-            tuple(preds[i * self.nl : (i + 1) * self.nl])
-            for i in range(1, 1 + len(preds[3:]) // self.nl)
-        )
-
-        box0, cls0, kpts, angs, box1, cls1 = map(list, zip(*[
-            (
-                *a.split((4 * self.reg_max, self.nc_per_head[0], self.nk, self.n_angles), 1),
-                *b.split((4 * self.reg_max, self.nc_per_head[1]), 1),
-            )
-            for a, b in zip(x0, x1)
-        ]))
-
-        bs = feats[0].shape[0]
-        box0 = torch.cat([box0[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box1 = torch.cat([box1[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        cls0 = torch.cat([cls0[i].view(bs, self.nc_per_head[0], -1) for i in range(self.nl)], dim=-1)
-        cls1 = torch.cat([cls1[i].view(bs, self.nc_per_head[1], -1) for i in range(self.nl)], dim=-1)
-        kpts = torch.cat([kpts[i].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1)
-        angs = torch.cat([angs[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
-
-        return dict(
-            feats=list(feats),
-            boxes=torch.cat([box0, box1], 1),
-            scores=torch.cat([cls0, cls1], 1),
-            kpts=kpts,
-            angles=angs
-        )
-
     config = QAT_Config(
         platform=args.platform or "rknn",
         overrides=get_overrides(args),
@@ -92,89 +126,14 @@ def get_qat_config__BallSports(args):
             ],
         ),
         qat_functions=QAT_Functions(
-            forward=_forward_function,
-            forward_qat=_forward_qat,
-            inference_qat=default_inference_qat,
+            forward=_default_forward_function,
+            forward_qat=_default_forward_qat,
+            inference_qat=_default_inference_qat,
         ),
     )
     return config
 
 def get_qat_config__Code_Match_MergeActions(args):
-    def _forward_function(self, x: List[torch.Tensor]):
-        box0 = [self.cv2[0][i](x[i]) for i in range(self.nl)]
-        box1 = [self.cv2[1][i](x[i]) for i in range(self.nl)]
-        box2 = [self.cv2[2][i](x[i]) for i in range(self.nl)]
-        box3 = [self.cv2[3][i](x[i]) for i in range(self.nl)]
-        box4 = [self.cv2[4][i](x[i]) for i in range(self.nl)]
-        box5 = [self.cv2[5][i](x[i]) for i in range(self.nl)]
-
-        cls0 = [self.cv3[0][i](x[i]) for i in range(self.nl)]
-        cls1 = [self.cv3[1][i](x[i]) for i in range(self.nl)]
-        cls2 = [self.cv3[2][i](x[i]) for i in range(self.nl)]
-        cls3 = [self.cv3[3][i](x[i]) for i in range(self.nl)]
-        cls4 = [self.cv3[4][i](x[i]) for i in range(self.nl)]
-        cls5 = [self.cv3[5][i](x[i]) for i in range(self.nl)]
-
-        pose = [self.cv4[i](x[i]) for i in range(self.nl)]
-        kpts = [self.cv4_kpts[i](pose[i]) for i in range(self.nl)]
-
-        ang0 = [self.cv5[0][i](x[i]) for i in range(self.nl)]
-        ang1 = [self.cv5[1][i](x[i]) for i in range(self.nl)]
-
-        x0 = [torch.cat((box0[i], cls0[i], ang0[i]), 1) for i in range(self.nl)]
-        x1 = [torch.cat((box1[i], cls1[i], kpts[i]), 1) for i in range(self.nl)]
-        x2 = [torch.cat((box2[i], cls2[i]), 1) for i in range(self.nl)]
-        x3 = [torch.cat((box3[i], cls3[i], ang1[i]), 1) for i in range(self.nl)]
-        x4 = [torch.cat((box4[i], cls4[i]), 1) for i in range(self.nl)]
-        x5 = [torch.cat((box5[i], cls5[i]), 1) for i in range(self.nl)]
-        if self.export:
-            return (*x0, *x1, *x2, *x3, *x4, *x5)
-        return (*x, *x0, *x1, *x2, *x3, *x4, *x5)
-
-    def _forward_qat(self, preds):
-        feats = preds[0:3]
-        x0, x1, x2, x3, x4, x5 = (
-            tuple(preds[i * self.nl : (i + 1) * self.nl])
-            for i in range(1, 1 + len(preds[3:]) // self.nl)
-        )
-        
-        box0, cls0, ang0, box1, cls1, kpts, box2, cls2, box3, cls3, ang1, box4, cls4, box5, cls5 = map(list, zip(*[
-            (
-                *x0_ls.split((4 * self.reg_max, self.nc_per_head[0], self.n_angles), 1),
-                *x1_ls.split((4 * self.reg_max, self.nc_per_head[1], self.nk), 1),
-                *x2_ls.split((4 * self.reg_max, self.nc_per_head[2]), 1),
-                *x3_ls.split((4 * self.reg_max, self.nc_per_head[3], self.n_angles), 1),
-                *x4_ls.split((4 * self.reg_max, self.nc_per_head[4]), 1),
-                *x5_ls.split((4 * self.reg_max, self.nc_per_head[5]), 1),
-            )
-            for x0_ls, x1_ls, x2_ls, x3_ls, x4_ls, x5_ls in zip(x0, x1, x2, x3, x4, x5)
-        ]))
-
-        bs = feats[0].shape[0]
-        box0 = torch.cat([box0[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box1 = torch.cat([box1[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box2 = torch.cat([box2[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box3 = torch.cat([box3[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box4 = torch.cat([box4[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box5 = torch.cat([box5[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        cls0 = torch.cat([cls0[i].view(bs, self.nc_per_head[0], -1) for i in range(self.nl)], dim=-1)
-        cls1 = torch.cat([cls1[i].view(bs, self.nc_per_head[1], -1) for i in range(self.nl)], dim=-1)
-        cls2 = torch.cat([cls2[i].view(bs, self.nc_per_head[2], -1) for i in range(self.nl)], dim=-1)
-        cls3 = torch.cat([cls3[i].view(bs, self.nc_per_head[3], -1) for i in range(self.nl)], dim=-1)
-        cls4 = torch.cat([cls4[i].view(bs, self.nc_per_head[4], -1) for i in range(self.nl)], dim=-1)
-        cls5 = torch.cat([cls5[i].view(bs, self.nc_per_head[5], -1) for i in range(self.nl)], dim=-1)
-        kpts = torch.cat([kpts[i].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1)
-        ang0 = torch.cat([ang0[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
-        ang1 = torch.cat([ang1[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
-
-        return dict(
-            feats=list(feats),
-            boxes=torch.cat([box0, box1, box2, box3, box4, box5], 1),
-            scores=torch.cat([cls0, cls1, cls2, cls3, cls4, cls5], 1),
-            kpts=kpts,
-            angles=torch.cat([ang0, ang1], 1),
-        )
-
     config = QAT_Config(
         platform=args.platform or "Ascend",
         overrides=get_overrides(args),
@@ -196,96 +155,15 @@ def get_qat_config__Code_Match_MergeActions(args):
             ],
         ),
         qat_functions=QAT_Functions(
-            forward=_forward_function,
-            forward_qat=_forward_qat,
-            inference_qat=default_inference_qat,
+            forward=_default_forward_function,
+            forward_qat=_default_forward_qat,
+            inference_qat=_default_inference_qat,
         ),
     )
 
     return config
 
 def get_qat_config__Code_Match(args):
-    def _forward_function(self, x: List[torch.Tensor]):
-        box0 = [self.cv2[0][i](x[i]) for i in range(self.nl)]
-        box1 = [self.cv2[1][i](x[i]) for i in range(self.nl)]
-        box2 = [self.cv2[2][i](x[i]) for i in range(self.nl)]
-        box3 = [self.cv2[3][i](x[i]) for i in range(self.nl)]
-        box4 = [self.cv2[4][i](x[i]) for i in range(self.nl)]
-        box5 = [self.cv2[5][i](x[i]) for i in range(self.nl)]
-        box6 = [self.cv2[6][i](x[i]) for i in range(self.nl)]
-
-        cls0 = [self.cv3[0][i](x[i]) for i in range(self.nl)]
-        cls1 = [self.cv3[1][i](x[i]) for i in range(self.nl)]
-        cls2 = [self.cv3[2][i](x[i]) for i in range(self.nl)]
-        cls3 = [self.cv3[3][i](x[i]) for i in range(self.nl)]
-        cls4 = [self.cv3[4][i](x[i]) for i in range(self.nl)]
-        cls5 = [self.cv3[5][i](x[i]) for i in range(self.nl)]
-        cls6 = [self.cv3[6][i](x[i]) for i in range(self.nl)]
-
-        pose = [self.cv4[i](x[i]) for i in range(self.nl)]
-        kpts = [self.cv4_kpts[i](pose[i]) for i in range(self.nl)]
-
-        ang0 = [self.cv5[0][i](x[i]) for i in range(self.nl)]
-        ang1 = [self.cv5[1][i](x[i]) for i in range(self.nl)]
-
-        x0 = [torch.cat((box0[i], cls0[i], ang0[i]), 1) for i in range(self.nl)]
-        x1 = [torch.cat((box1[i], cls1[i], kpts[i]), 1) for i in range(self.nl)]
-        x2 = [torch.cat((box2[i], cls2[i]), 1) for i in range(self.nl)]
-        x3 = [torch.cat((box3[i], cls3[i]), 1) for i in range(self.nl)]
-        x4 = [torch.cat((box4[i], cls4[i], ang1[i]), 1) for i in range(self.nl)]
-        x5 = [torch.cat((box5[i], cls5[i]), 1) for i in range(self.nl)]
-        x6 = [torch.cat((box6[i], cls6[i]), 1) for i in range(self.nl)]
-        if self.export:
-            return (*x0, *x1, *x2, *x3, *x4, *x5, *x6)
-        return (*x, *x0, *x1, *x2, *x3, *x4, *x5, *x6)
-
-    def _forward_qat(self, preds):
-        feats = preds[0:3]
-        x0, x1, x2, x3, x4, x5, x6 = (
-            tuple(preds[i * self.nl : (i + 1) * self.nl])
-            for i in range(1, 1 + len(preds[3:]) // self.nl)
-        )
-        
-        box0, cls0, ang0, box1, cls1, kpts, box2, cls2, box3, cls3, box4, cls4, ang1, box5, cls5, box6, cls6 = map(list, zip(*[
-            (
-                *x0_ls.split((4 * self.reg_max, self.nc_per_head[0], self.n_angles), 1),
-                *x1_ls.split((4 * self.reg_max, self.nc_per_head[1], self.nk), 1),
-                *x2_ls.split((4 * self.reg_max, self.nc_per_head[2]), 1),
-                *x3_ls.split((4 * self.reg_max, self.nc_per_head[3]), 1),
-                *x4_ls.split((4 * self.reg_max, self.nc_per_head[4], self.n_angles), 1),
-                *x5_ls.split((4 * self.reg_max, self.nc_per_head[5]), 1),
-                *x6_ls.split((4 * self.reg_max, self.nc_per_head[6]), 1),
-            )
-            for x0_ls, x1_ls, x2_ls, x3_ls, x4_ls, x5_ls, x6_ls in zip(x0, x1, x2, x3, x4, x5, x6)
-        ]))
-
-        bs = feats[0].shape[0]
-        box0 = torch.cat([box0[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box1 = torch.cat([box1[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box2 = torch.cat([box2[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box3 = torch.cat([box3[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box4 = torch.cat([box4[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box5 = torch.cat([box5[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box6 = torch.cat([box6[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        cls0 = torch.cat([cls0[i].view(bs, self.nc_per_head[0], -1) for i in range(self.nl)], dim=-1)
-        cls1 = torch.cat([cls1[i].view(bs, self.nc_per_head[1], -1) for i in range(self.nl)], dim=-1)
-        cls2 = torch.cat([cls2[i].view(bs, self.nc_per_head[2], -1) for i in range(self.nl)], dim=-1)
-        cls3 = torch.cat([cls3[i].view(bs, self.nc_per_head[3], -1) for i in range(self.nl)], dim=-1)
-        cls4 = torch.cat([cls4[i].view(bs, self.nc_per_head[4], -1) for i in range(self.nl)], dim=-1)
-        cls5 = torch.cat([cls5[i].view(bs, self.nc_per_head[5], -1) for i in range(self.nl)], dim=-1)
-        cls6 = torch.cat([cls6[i].view(bs, self.nc_per_head[6], -1) for i in range(self.nl)], dim=-1)
-        kpts = torch.cat([kpts[i].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1)
-        ang0 = torch.cat([ang0[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
-        ang1 = torch.cat([ang1[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
-
-        return dict(
-            feats=list(feats),
-            boxes=torch.cat([box0, box1, box2, box3, box4, box5, box6], 1),
-            scores=torch.cat([cls0, cls1, cls2, cls3, cls4, cls5, cls6], 1),
-            kpts=kpts,
-            angles=torch.cat([ang0, ang1], 1),
-        )
-
     config = QAT_Config(
         platform=args.platform or "Ascend",
         overrides=get_overrides(args),
@@ -308,77 +186,14 @@ def get_qat_config__Code_Match(args):
             ],
         ),
         qat_functions=QAT_Functions(
-            forward=_forward_function,
-            forward_qat=_forward_qat,
-            inference_qat=default_inference_qat,
+            forward=_default_forward_function,
+            forward_qat=_default_forward_qat,
+            inference_qat=_default_inference_qat,
         ),
     )
     return config
 
 def get_qat_config__Student_MergeActions(args):
-    def _forward_function(self, x: List[torch.Tensor]):
-        box0 = [self.cv2[0][i](x[i]) for i in range(self.nl)]  # head
-        box1 = [self.cv2[1][i](x[i]) for i in range(self.nl)]  # body
-        box2 = [self.cv2[2][i](x[i]) for i in range(self.nl)]  # actions
-        box3 = [self.cv2[3][i](x[i]) for i in range(self.nl)]  # face
-
-        cls0 = [self.cv3[0][i](x[i]) for i in range(self.nl)]  # head
-        cls1 = [self.cv3[1][i](x[i]) for i in range(self.nl)]  # body
-        cls2 = [self.cv3[2][i](x[i]) for i in range(self.nl)]  # actions
-        cls3 = [self.cv3[3][i](x[i]) for i in range(self.nl)]  # face
-
-        pose = [self.cv4[i](x[i]) for i in range(self.nl)]
-        kpts = [self.cv4_kpts[i](pose[i]) for i in range(self.nl)]
-
-        ang0 = [self.cv5[0][i](x[i]) for i in range(self.nl)]
-        ang1 = [self.cv5[1][i](x[i]) for i in range(self.nl)]
-
-        x0 = [torch.cat((box0[i], cls0[i], ang0[i]), 1) for i in range(self.nl)]
-        x1 = [torch.cat((box1[i], cls1[i], kpts[i]), 1) for i in range(self.nl)]
-        x2 = [torch.cat((box2[i], cls2[i]), 1) for i in range(self.nl)]
-        x3 = [torch.cat((box3[i], cls3[i], ang1[i]), 1) for i in range(self.nl)]
-        if self.export:
-            return (*x0, *x1, *x2, *x3)
-        return (*x, *x0, *x1, *x2, *x3)
-
-    def _forward_qat(self, preds):
-        feats = preds[0:3]
-        x0, x1, x2, x3, = (
-            tuple(preds[i * self.nl : (i + 1) * self.nl])
-            for i in range(1, 1 + len(preds[3:]) // self.nl)
-        )
-        
-        box0, cls0, ang0, box1, cls1, kpts, box2, cls2, box3, cls3, ang1 = map(list, zip(*[
-            (
-                *x0_ls.split((4 * self.reg_max, self.nc_per_head[0], self.n_angles), 1),
-                *x1_ls.split((4 * self.reg_max, self.nc_per_head[1], self.nk), 1),
-                *x2_ls.split((4 * self.reg_max, self.nc_per_head[2]), 1),
-                *x3_ls.split((4 * self.reg_max, self.nc_per_head[3], self.n_angles), 1),
-            )
-            for x0_ls, x1_ls, x2_ls, x3_ls in zip(x0, x1, x2, x3)
-        ]))
-
-        bs = feats[0].shape[0]
-        box0 = torch.cat([box0[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box1 = torch.cat([box1[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box2 = torch.cat([box2[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        box3 = torch.cat([box3[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        cls0 = torch.cat([cls0[i].view(bs, self.nc_per_head[0], -1) for i in range(self.nl)], dim=-1)
-        cls1 = torch.cat([cls1[i].view(bs, self.nc_per_head[1], -1) for i in range(self.nl)], dim=-1)
-        cls2 = torch.cat([cls2[i].view(bs, self.nc_per_head[2], -1) for i in range(self.nl)], dim=-1)
-        cls3 = torch.cat([cls3[i].view(bs, self.nc_per_head[3], -1) for i in range(self.nl)], dim=-1)
-        kpts = torch.cat([kpts[i].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1)
-        ang0 = torch.cat([ang0[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
-        ang1 = torch.cat([ang1[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
-
-        return dict(
-            feats=list(feats),
-            boxes=torch.cat([box0, box1, box2, box3], 1),
-            scores=torch.cat([cls0, cls1, cls2, cls3], 1),
-            kpts=kpts,
-            angles=torch.cat([ang0, ang1], 1),
-        )
-
     config = QAT_Config(
         platform=args.platform,
         overrides=get_overrides(args),
@@ -398,11 +213,13 @@ def get_qat_config__Student_MergeActions(args):
             ],
         ),
         qat_functions=QAT_Functions(
-            forward=_forward_function,
-            forward_qat=_forward_qat,
-            inference_qat=default_inference_qat,
+            forward=_default_forward_function,
+            forward_qat=_default_forward_qat,
+            inference_qat=_default_inference_qat,
         ),
     )
+    if args.platform.lower() in ["rknn", "torchao"]:
+        config.qat_functions.forward = partial(_default_forward_function, ff_cat=True)
 
     if args.platform.lower() in ["sophgo", "nvidia"]:
         config.calibrate_config = CalibrateConfig(
@@ -433,47 +250,6 @@ def get_qat_config__Student_MergeActions(args):
     return config
 
 def get_qat_config__Teacher(args):
-    def _forward_function(self, x: List[torch.Tensor]):
-        box0 = [self.cv2[0][i](x[i]) for i in range(self.nl)]
-        cls0 = [self.cv3[0][i](x[i]) for i in range(self.nl)]
-
-        pose = [self.cv4[i](x[i]) for i in range(self.nl)]
-        kpts = [self.cv4_kpts[i](pose[i]) for i in range(self.nl)]
-        angles = [self.cv5[0][i](x[i]) for i in range(self.nl)]
-
-        x0 = [self.float_cat([box0[l], cls0[l], kpts[l], angles[l]], dim=1) for l in range(self.nl)]
-        if self.export:
-            return (*x0, )
-        return (*x, *x0)
-    
-    def _forward_qat(self, preds):
-        feats = preds[0:3]
-        x0 = (
-            tuple(preds[i * self.nl : (i + 1) * self.nl])
-            for i in range(1, 1 + len(preds[3:]) // self.nl)
-        )
-
-        box0, cls0, kpts, angs = map(list, zip(*[
-            (
-                *x0_ls.split((4 * self.reg_max, self.nc_per_head[0], self.nk, self.n_angles), 1),
-            )
-            for x0_ls in zip(x0)
-        ]))
-
-        bs = feats[0].shape[0]
-        box0 = torch.cat([box0[i].view(bs, 4 * self.reg_max, -1) for i in range(self.nl)], dim=-1)
-        cls0 = torch.cat([cls0[i].view(bs, self.nc_per_head[0], -1) for i in range(self.nl)], dim=-1)
-        kpts = torch.cat([kpts[i].view(bs, self.nk, -1) for i in range(self.nl)], dim=-1)
-        angs = torch.cat([angs[i].view(bs, self.n_angles, -1) for i in range(self.nl)], dim=-1).sigmoid()
-
-        return dict(
-            feats=list(feats),
-            boxes=box0,
-            scores=cls0,
-            kpts=kpts,
-            angles=angs
-        )
-
     config = QAT_Config(
         platform=args.platform,
         overrides=get_overrides(args),
@@ -490,9 +266,9 @@ def get_qat_config__Teacher(args):
             ],
         ),
         qat_functions=QAT_Functions(
-            forward=_forward_function,
-            forward_qat=_forward_qat,
-            inference_qat=default_inference_qat,
+            forward=_default_forward_function,
+            forward_qat=_default_forward_qat,
+            inference_qat=_default_inference_qat,
         ),
     )
 

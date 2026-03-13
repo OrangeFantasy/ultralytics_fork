@@ -42,12 +42,18 @@ class TorchAO_Pipeline(QAT_Pipeline):
         return True
 
     @staticmethod
-    def get_defualt_qconfig() -> QConfig:
-        # From Rockchip_RKNPU_User_Guide_RKNN_SDK_V2.3.2
-        return get_default_qconfig("qnnpack")
+    def get_qconfig() -> QConfigMapping:
+        global_qconfig = get_default_qconfig("qnnpack")
+
+        qconfig_mapping = QConfigMapping()
+        qconfig_mapping.set_global(global_qconfig)
+        qconfig_mapping.set_object_type(FloatFunctional_Concat, None)  # Disable quantization for Concat
+        return qconfig_mapping
+
         # default_weight_observer = MinMaxObserver.with_args(
         #     dtype=torch.qint8, qscheme=torch.per_tensor_affine
         # )
+        # From Rockchip_RKNPU_User_Guide_RKNN_SDK_V2.3.2
         # return QConfig(
         #     activation=FakeQuantize.with_args(
         #         observer=HistogramObserver,
@@ -82,14 +88,12 @@ class TorchAO_Pipeline(QAT_Pipeline):
         **ignore_kwargs
     ) -> tuple[torch.nn.Module, fx.GraphModule]:
         m = model_fp.model[-1]
-        m.float_cat = FloatFunctional_Concat()
+        m.ff_cat = FloatFunctional_Concat()
 
         print("==> [TorchAO] prepare_qat_fx...")
-        qconfig_mapping = QConfigMapping()    
-        qconfig_mapping.set_global(self.get_defualt_qconfig())
-        qconfig_mapping.set_object_type(FloatFunctional_Concat, None)  # Disable quantization for Concat
 
         dummy_input = torch.randn([1, 3, *self.args.imgsz], device=self.device)
+        qconfig_mapping = self.get_qconfig()
         model_qat = prepare_qat_fx(model_fp, qconfig_mapping, example_inputs=(dummy_input,))
 
         with open(self.wdir / "model_fx_graph.txt", "w") as f:

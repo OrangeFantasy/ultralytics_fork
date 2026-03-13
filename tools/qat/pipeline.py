@@ -126,8 +126,8 @@ class QAT_Pipeline(_QAT_Trainer):
 
         head_module = model_fp.model[-1]
         setattr(self.model, "nc", head_module.nc)
-        self.forward_qat = partial(head_module.forward_qat, head_module)
-        self.inference_qat = partial(head_module.inference_qat, head_module)
+        self.forward_qat = head_module.forward_qat # partial(head_module.forward_qat, head_module)
+        self.inference_qat = head_module.inference_qat # partial(head_module.inference_qat, head_module)
 
         with open(self.wdir / "model_fp.txt", "w") as f1, open(self.wdir / "model_qat.txt", "w") as f2:
             f1.write(str(model_fp))
@@ -301,9 +301,9 @@ def run_qat(config: QAT_Config):
     if config.qat_functions.forward is not None:
         m.forward_function = config.qat_functions.forward
     if config.qat_functions.forward_qat is not None:
-        m.forward_qat = config.qat_functions.forward_qat
+        m.forward_qat = partial(config.qat_functions.forward_qat, m)
     if config.qat_functions.inference_qat is not None:
-        m.inference_qat = config.qat_functions.inference_qat
+        m.inference_qat = partial(config.qat_functions.inference_qat, m)
 
     if config.model_qat_weights is not None:
         print(f"==> [QAT] qat_weights has been provided, skip training")
