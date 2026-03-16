@@ -12,7 +12,7 @@ def get_overrides(args):
         "imgsz" : args.imgsz,  "conf"  : args.conf,   "iou"  : args.iou,   "max_det": 300,
         "warmup_epochs": 0,    "single_cls": False,
         "amp"   : False,       "ema"   : False,        
-        "optimizer": "auto",   "lr0"   : 0.01 * 0.01, "lrf"  : 0.05,
+        "optimizer": "SGD",    "lr0"   : 0.01 * 0.01, "lrf"  : 0.05,
         "mosaic": 0.0,         "fliplr": 0.5,         "scale": 0.6,         
         "plots" : True,        "save_period": 5,      "val"  : False,
         "project": args.project if args.project is not None else "qat",
@@ -221,11 +221,11 @@ def get_qat_config__Student_MergeActions(args):
     if args.platform.lower() in ["rknn", "torchao"]:
         config.qat_functions.forward = partial(_default_forward_function, ff_cat=True)
 
-    if args.platform.lower() in ["sophgo", "nvidia"]:
+    if args.platform.lower() in ["sophgo", "nvidia", "rknn", "torchao"]:
         config.calibrate_config = CalibrateConfig(
             enable=True,
             batch_size=64,
-            num_batch=100,
+            num_batch=50,
         )
     if args.platform.lower() == "sophgo":
         config.custom_kwargs = {

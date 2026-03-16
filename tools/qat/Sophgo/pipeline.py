@@ -7,13 +7,12 @@ from tqdm import tqdm
 import torch
 from torch import fx
 
-from tpu_mq.convert_deploy import convert_deploy
-from tpu_mq.prepare_by_platform import prepare_by_platform
-from tpu_mq.utils.state import enable_calibration, enable_quantization
-
 from ..pipeline import QAT_Pipeline, patch_for_fx_tracing
 
 class Sophgo_Pipeline(QAT_Pipeline):
+    # Import `tpu_mq` inside the function to avoid incorrect device initialization.
+    # If imported at the module level, it may initialize CUDA early and fix the device to `cuda:0`, ignoring later device settings.
+
     def initialize_env(
         self, 
         **ignore_kwargs
@@ -29,6 +28,9 @@ class Sophgo_Pipeline(QAT_Pipeline):
         prepare_custom_config_dict: dict[str, Any] = { },
         **ignore_kwargs
     ) -> tuple[torch.nn.Module, fx.GraphModule]:
+        from tpu_mq.prepare_by_platform import prepare_by_platform
+        from tpu_mq.utils.state import enable_quantization
+
         print("==> [SOPHGO] prepare_by_platform ...")
         model_fp.train()
 
@@ -48,6 +50,8 @@ class Sophgo_Pipeline(QAT_Pipeline):
         num_batch: int, 
         **ignore_kwargs
     ) -> None:
+        from tpu_mq.utils.state import enable_calibration, enable_quantization
+
         print("==> [SOPHGO] calibrate ...")
         enable_calibration(self.model)
         calibration_loader, preprocess_function = self.get_calibration_dataloader(batch_size)
@@ -69,6 +73,8 @@ class Sophgo_Pipeline(QAT_Pipeline):
         net_type: str = "CNN",
         **ignore_kwargs
     ) -> None:
+        from tpu_mq.convert_deploy import convert_deploy
+
         save_path = str(self.wdir / "Sophgo")
         if not os.path.exists(save_path):
             os.makedirs(save_path, exist_ok=True)

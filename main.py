@@ -93,13 +93,17 @@ def initlize_global_args(args):
     if args.nkpts == 17:
         loss.OKS_SIGMA = _OKS_SIGMA[args.nkpts]
         os.environ["__global_args__oks_sigma"] = np.array2string(loss.OKS_SIGMA)
+
+        # Used by `ultralytics.data.utils:img2label_paths` to map image paths to label paths: replace `sa` in the image path with `sb`.
+        os.environ["__global_args__img2label_paths_sa"] = "zhaolixiang/dataset/teacher_view_dataset/trainval/images"
+        os.environ["__global_args__img2label_paths_sb"] = "yuanchengzhi/datasets/teacher_view_dataset/trainval/labels"
     elif args.nkpts == 19:
         loss.OKS_SIGMA = _OKS_SIGMA[args.nkpts]
         os.environ["__global_args__oks_sigma"] = np.array2string(loss.OKS_SIGMA)
         try:
             class_ranges = np.array(eval(args.class_ranges), dtype=np.int32)
         except Exception as ex:
-            print("==> Parse class_ranges failed. Format like: [[0, 0], [1, 5], [6, 6], [7, 10], [11, 11]]")
+            print("==> Parse class_ranges failed. Format like: [[0, 0], [1, 5], [2, 5], [6, 6], [7, 10], [11, 11]]")
             raise ex
         os.environ["__global_args__multi_head_class_ranges"] = np.array2string(class_ranges.reshape(-1))
         os.environ["__global_args__img2label_paths_sa"] = "zhaolixiang/dataset/multi_task_dataset/trainval/trainval_multi_task_with_action_labels/images"

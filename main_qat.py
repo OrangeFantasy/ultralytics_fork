@@ -18,7 +18,7 @@ def run(args):
     os.environ["__global_args__val_period"] = "10"
     os.environ["__global_args__val_last_epochs"] = "10"
  
-    config = get_qat_config__Student_MergeActions(args)
+    config = get_qat_config__Teacher(args)
     run_qat(config)
 
 def override_debug_params(args):
@@ -35,10 +35,16 @@ def override_debug_params(args):
         "override_hyp": ast.literal_eval(r"{ 'plots': False, 'scale': 0.6, 'albumentations': 1.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'cls': 1.0 ,'kobj': 0.25, 'rle': 0.5 }"),
     }
     student_qrcode_args = {
-        "model": "../cfg/qrcode/models/yolov8s_19kpts_MergeRaiseHandAndStandUp.yaml",
-        "data": "../cfg/qrcode/datasets/19kpts_MergeRaiseHandAndStandUp.yaml",
+        "model": "cfg/qrcode/models/yolov8s_19kpts_MergeRaiseHandAndStandUp.yaml",
+        "pretrained": "runs/multi-head/train/20260207_231833_yolov8s_19kpts_MergeRaiseHandAndStandUp/weights/best.pt",
+        "data": "cfg/qrcode/datasets/19kpts_MergeRaiseHandAndStandUp.yaml",
         "nkpts": 19,
+        "class_ranges": "[[0, 0], [1, 5], [2, 5], [6, 6], [7, 10], [11, 11]]",
         "act": "relu6",
+        "epochs": 1,
+        "batch": 128,
+        "override_hyp": ast.literal_eval(r"{ 'scale': 0.6, 'fliplr': 0.0, 'albumentations': 0.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'rle': 0.75 }"),
+        "platform": "rknn",
     }
     student_args = {
         "model": "cfg/classroom/models/yolov8s-19kpts_Student_MergeActions.yaml",
@@ -47,13 +53,25 @@ def override_debug_params(args):
         "nkpts": 19,
         "class_ranges": "[[0, 0], [1, 5], [2, 5], [6, 6]]",
         "act": "relu6",
+        "device": "2",
+        "epochs": 1,
+        "batch": 128,
+        "override_hyp": ast.literal_eval(r"{ 'scale': 0.6, 'fliplr': 0.0, 'albumentations': 0.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'rle': 0.75 }"),
         "platform": "rknn",
-        "device": "0",
+    }
+    teacher_args = {
+        "model": "cfg/classroom/models/yolov8s-17kpts_Teacher.yaml",
+        "pretrained": "runs/multi-head/classroom/20260313_133533_yolov8s-17kpts_Teacher/weights/best.pt",
+        "data": "cfg/classroom/datasets/17kpts_Teacher.yaml",
+        "nkpts": 17,
+        "act": "relu6",
+        "platform": "rknn",
+        "device": "2",
         "epochs": 1,
         "batch": 128,
         "override_hyp": ast.literal_eval(r"{ 'scale': 0.6, 'fliplr': 0.0, 'albumentations': 0.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'rle': 0.75 }"),
     }
-    args.__dict__.update(student_args)
+    args.__dict__.update(teacher_args)
     args.__dict__.update({
         "ema": False,
         "project": ".experiments"
@@ -63,7 +81,7 @@ if __name__ == "__main__":
     main.on_add_extra_arguments = add_qat_arguments
 
     args = main.parse_args()
-    if sys.gettrace() is not None or True:
+    if sys.gettrace() is not None or False:
         override_debug_params(args)
 
     main.initlize_global_args(args)

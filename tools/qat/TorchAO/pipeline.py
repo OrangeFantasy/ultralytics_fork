@@ -89,9 +89,9 @@ class TorchAO_Pipeline(QAT_Pipeline):
     ) -> tuple[torch.nn.Module, fx.GraphModule]:
         m = model_fp.model[-1]
         m.ff_cat = FloatFunctional_Concat()
+        print("==> [TorchAO] replace torch.cat with FloatFunctional_Concat at the head of model...")
 
         print("==> [TorchAO] prepare_qat_fx...")
-
         dummy_input = torch.randn([1, 3, *self.args.imgsz], device=self.device)
         qconfig_mapping = self.get_qconfig()
         model_qat = prepare_qat_fx(model_fp, qconfig_mapping, example_inputs=(dummy_input,))
