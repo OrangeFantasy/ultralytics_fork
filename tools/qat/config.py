@@ -271,6 +271,8 @@ def get_qat_config__Teacher(args):
             inference_qat=_default_inference_qat,
         ),
     )
+    if args.platform.lower() in ["rknn", "torchao"]:
+        config.qat_functions.forward = partial(_default_forward_function, ff_cat=True)
 
     if args.platform.lower() in ["sophgo", "nvidia"]:
         config.calibrate_config = CalibrateConfig(

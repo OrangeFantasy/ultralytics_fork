@@ -7,7 +7,7 @@ from copy import deepcopy
 import torch
 from hotwheels import amct_pytorch
 
-from ..pipeline import QAT_Pipeline
+from ..pipeline import QAT_Pipeline, patch_for_fx_tracing
 
 def create_quant_retrain_config(
     config_file: str, 
@@ -138,6 +138,8 @@ class Ascend_Pipeline(QAT_Pipeline):
     ):
         if not os.path.exists("runs/.amct_cache"):
             os.makedirs("runs/.amct_cache", mode=777)
+
+        patch_for_fx_tracing()
 
     def prepare(
         self, 

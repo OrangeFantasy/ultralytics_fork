@@ -205,7 +205,7 @@ args.yaml
 results.csv
 
 .py375/
-.Ascend/
+.Ascend_QAT/
 # tools/qat
 # tools/exporter
 # tools/convert_checkpoint.py

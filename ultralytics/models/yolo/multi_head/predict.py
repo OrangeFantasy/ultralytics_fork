@@ -50,7 +50,7 @@ class MultiHeadPredictor(DetectionPredictor):
         dtype = preds.dtype
 
         preds_postprocessed = []
-        for head_idx, head_type in reversed(list(enumerate(self.heads))):
+        for head_idx, head_type in reversed(list(enumerate(heads))):
             curr_head_preds = [boxes_per_head.pop(), scores_per_head.pop()]
             if head_type == "angle":
                 curr_head_preds += [
@@ -67,11 +67,13 @@ class MultiHeadPredictor(DetectionPredictor):
                     kpts_per_head.pop(),
                     angles_per_head.pop()
                 ]
-            else:
+            elif head_type == "detect":
                 curr_head_preds += [
                     torch.zeros((batch_size, nk, anchors), dtype=dtype, device=self.device),
                     torch.zeros((batch_size, n_angles, anchors), dtype=dtype, device=self.device)
                 ]
+            else:
+                raise ValueError(f"Unknown head type: {head_type}")
 
             curr_head_preds = torch.cat(curr_head_preds, dim=1)
             curr_head_preds = nms.non_max_suppression(
@@ -101,7 +103,7 @@ class MultiHeadPredictor(DetectionPredictor):
         result = super().construct_result(pred, img, orig_img, img_path)
         # Extract keypoints from prediction and reshape according to model's keypoint shape
         pred_kpts = pred[:, 6:-3].view(len(pred), *self.model.kpt_shape)
-        pred_angs = pred[:, -3:].view(len(pred), 3)  # TODO: add angles in results
+        pred_angs = pred[:, -3:].view(len(pred), 3)
         # Scale keypoints coordinates to match the original image dimensions
         pred_kpts = ops.scale_coords(img.shape[2:], pred_kpts, orig_img.shape)
         result.update(keypoints=pred_kpts, angles=pred_angs)

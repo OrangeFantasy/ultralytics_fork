@@ -1430,16 +1430,18 @@ class MultiHeadLoss(v8DetectionLoss):
         self.n_angle_heads = m.n_angle_heads
         self.n_angles = m.n_angles
 
-        for head_idx in range(self.n_heads):
-            if self.heads[head_idx] == "angle":
+        for head_idx, head_type in enumerate(self.heads):
+            if head_type == "angle":
                 loss = v8AngleLoss(model)
-            elif self.heads[head_idx] == "pose":
+            elif head_type == "pose":
                 loss = PoseLoss26(model, tal_topk=tal_topk, tal_topk2=tal_topk2)
-            elif self.heads[head_idx] == "pose-angle":
+            elif head_type == "pose-angle":
                 loss = Pose26AngleLoss(model)
-            else:
+            elif head_type == "detect":
                 loss = v8DetectionLoss(model, tal_topk=tal_topk, tal_topk2=tal_topk2)
-            
+            else:
+                raise ValueError(f"Unknown head type: {head_type}")
+
             nc = self.nc_per_head[head_idx]
             loss.nc = nc
             loss.no = nc + loss.reg_max * 4
@@ -1450,6 +1452,7 @@ class MultiHeadLoss(v8DetectionLoss):
                 f"topk={loss.assigner.topk}, topk2={loss.assigner.topk2}, tal_alpha={loss.assigner.alpha}, tal_beta={loss.assigner.beta}", 
                 end=""
             )
+        print()
 
         if os.environ.get("__global_args__multi_head_class_ranges", None):
             class_ranges = np.fromstring(os.environ["__global_args__multi_head_class_ranges"].strip("[]"), dtype=np.int32, sep=" ").reshape(-1, 2)
@@ -1521,7 +1524,7 @@ class MultiHeadLoss(v8DetectionLoss):
         assert kpts_sigma_per_head is None or (len(kpts_sigma_per_head) == 0), "CHECK FAILED!"
         return loss.sum(dim=0), loss_item.sum(dim=0)
 
-    def _select_batch(self, batch: dict[str, torch.Tensor], head_idx: int):
+    def _select_batch(self, batch: dict[str, torch.Tensor], head_idx: int) -> dict[str, torch.Tensor]:
         class_start, class_end = self.class_ranges[head_idx]
         class_mask = ((batch["cls"] >= class_start) & (batch["cls"] <= class_end)).view(-1)
         sub_batch = {

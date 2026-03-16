@@ -8,27 +8,43 @@ import libcst as cst
 from libcst.metadata import PositionProvider, ParentNodeProvider
 
 class IfWalrusTransformer(cst.CSTTransformer):
+    def _extract_namedexpr(self, node: cst.CSTNode):
+        assigns = []
+
+        class WalrusReplacer(cst.CSTTransformer):
+            def leave_NamedExpr(self, original_node, updated_node):
+                assigns.append(
+                    cst.SimpleStatementLine(
+                        body=[
+                            cst.Assign(
+                                targets=[cst.AssignTarget(target=updated_node.target)],
+                                value=updated_node.value,
+                            )
+                        ]
+                    )
+                )
+                return updated_node.target
+
+        new_node = node.visit(WalrusReplacer())
+        return assigns, new_node
+
     def leave_If(
-            self, original_node: cst.If, updated_node: cst.If
-        ) -> Union[cst.BaseStatement, cst.FlattenSentinel[cst.BaseStatement], cst.RemovalSentinel]:
-        test = updated_node.test
-
-        # Handle: if (x := f()) > 0
-        if isinstance(test, cst.Comparison) and isinstance(test.left, cst.NamedExpr):
-            left = test.left
-            assign = cst.SimpleStatementLine(body=[cst.Assign(targets=[cst.AssignTarget(target=left.target)], value=left.value)])
-            return cst.FlattenSentinel([assign, updated_node.with_changes(test=test.with_changes(left=left.target))])
-
-        # Handle: if x := expr
-        if isinstance(test, cst.NamedExpr):
-            assign = cst.SimpleStatementLine(body=[cst.Assign( targets=[cst.AssignTarget(target=test.target)], value=test.value)])
-            return cst.FlattenSentinel([assign, updated_node.with_changes(test=test.target)])
-
-        return updated_node
+        self, original_node: cst.If, updated_node: cst.If
+    ) -> Union[
+        cst.BaseStatement,
+        cst.FlattenSentinel[cst.BaseStatement],
+        cst.RemovalSentinel,
+    ]:
+        assigns, new_test = self._extract_namedexpr(updated_node.test)
+        if not assigns:
+            return updated_node
+        new_if = updated_node.with_changes(test=new_test)
+        return cst.FlattenSentinel(assigns + [new_if])
 
 class TypeHintTransformer(cst.CSTTransformer):
     def __init__(self):
         self.used = set()
+        self._in_annotation = 0
 
     def _flatten_pep604(self, node: cst.BaseExpression) -> list[cst.BaseExpression]:
         if isinstance(node, cst.BinaryOperation) and isinstance(node.operator, cst.BitOr):
@@ -46,30 +62,70 @@ class TypeHintTransformer(cst.CSTTransformer):
                 return updated_node.with_changes(value=cst.Name(name))
         return updated_node
 
+    def leave_BinaryOperation(
+        self, original_node: cst.BinaryOperation, updated_node: cst.BinaryOperation
+    ) -> cst.BaseExpression:
+        if self._in_annotation == 0:
+            return updated_node
+        if not isinstance(updated_node.operator, cst.BitOr):
+            return updated_node
+
+        items = self._flatten_pep604(updated_node)
+        has_none = any(isinstance(x, cst.Name) and x.value == "None" for x in items)
+        items = [x for x in items if not (isinstance(x, cst.Name) and x.value == "None")]
+
+        if len(items) == 1:
+            inner = items[0]
+        else:
+            self.used.add("Union")
+            inner = cst.Subscript(
+                value=cst.Name("Union"),
+                slice=[cst.SubscriptElement(slice=cst.Index(x)) for x in items],
+            )
+
+        if has_none:
+            self.used.add("Optional")
+            inner = cst.Subscript(
+                value=cst.Name("Optional"),
+                slice=[cst.SubscriptElement(slice=cst.Index(inner))],
+            )
+
+        return inner
+
+    def visit_Annotation(self, node: cst.Annotation):
+        self._in_annotation += 1
+
     def leave_Annotation(
         self, original_node: cst.Annotation, updated_node: cst.Annotation
     ) -> cst.Annotation:
+        self._in_annotation -= 1
+
         ann = updated_node.annotation
-        if isinstance(ann, cst.BinaryOperation) and isinstance(ann.operator, cst.BitOr):
-            items = self._flatten_pep604(ann)
+        items = self._flatten_pep604(ann)
 
-            has_none = any(isinstance(x, cst.Name) and x.value == "None" for x in items)
-            items = [x for x in items if not (isinstance(x, cst.Name) and x.value == "None")]
+        if len(items) <= 1:
+            return updated_node
 
-            # Build Union[...] if needed
-            if len(items) == 1:
-                inner = items[0]
-            else:
-                self.used.add("Union")
-                inner = cst.Subscript(value=cst.Name("Union"), slice=[cst.SubscriptElement(slice=cst.Index(x)) for x in items])
+        has_none = any(isinstance(x, cst.Name) and x.value == "None" for x in items)
+        items = [x for x in items if not (isinstance(x, cst.Name) and x.value == "None")]
 
-            # Wrap Optional[...] if None present
-            if has_none:
-                self.used.add("Optional")
-                return updated_node.with_changes(
-                    annotation=cst.Subscript(value=cst.Name("Optional"), slice=[cst.SubscriptElement(slice=cst.Index(inner))])
-                )
-        return updated_node
+        if len(items) == 1:
+            inner = items[0]
+        else:
+            self.used.add("Union")
+            inner = cst.Subscript(
+                value=cst.Name("Union"),
+                slice=[cst.SubscriptElement(slice=cst.Index(x)) for x in items],
+            )
+
+        if has_none:
+            self.used.add("Optional")
+            inner = cst.Subscript(
+                value=cst.Name("Optional"),
+                slice=[cst.SubscriptElement(slice=cst.Index(inner))],
+            )
+
+        return updated_node.with_changes(annotation=inner)
 
     def leave_Module(
         self, original_node: cst.Module, updated_node: cst.Module
@@ -356,20 +412,20 @@ class Py310ToPy37_CodeConverter:
 
 if __name__ == "__main__":
     import os
-    root = os.path.dirname(__file__) + "/.."
+    project_dir = os.path.dirname(__file__) + "/.."
 
     sources = [
-        "tools/qat/Ascend/",
         "ultralytics/",
 
         "tools/fast_math.py",
-        "tools/qat/pipeline.py",
         "tools/qat/config.py",
+        "tools/qat/pipeline.py",
+        "tools/qat/Ascend/pipeline.py",
 
         "main.py",
         "main_qat.py",
     ]
-    out_dir = "./.AMCT_QAT"
+    out_dir = "./.Ascend_QAT"
 
     converter = Py310ToPy37_CodeConverter()
-    converter.convert_tree(root, sources, out_dir)
+    converter.convert_tree(project_dir, sources, out_dir)
