@@ -50,20 +50,19 @@ class MultiHeadPredictor(DetectionPredictor):
         dtype = preds.dtype
 
         preds_postprocessed = []
-        for head_idx in reversed(range(n_heads)):
-            curr_head = heads[head_idx]
+        for head_idx, head_type in reversed(enumerate(self.heads)):
             curr_head_preds = [boxes_per_head.pop(), scores_per_head.pop()]
-            if curr_head == "angle":
+            if head_type == "angle":
                 curr_head_preds += [
                     torch.zeros((batch_size, nk, anchors), dtype=dtype, device=self.device),
                     angles_per_head.pop()
                 ]
-            elif curr_head == "pose":
+            elif head_type == "pose":
                 curr_head_preds += [
                     kpts_per_head.pop(),
                     torch.zeros((batch_size, n_angles, anchors), dtype=dtype, device=self.device)
                 ]
-            elif curr_head == "pose-angle":
+            elif head_type == "pose-angle":
                 curr_head_preds += [
                     kpts_per_head.pop(),
                     angles_per_head.pop()

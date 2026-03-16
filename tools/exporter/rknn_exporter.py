@@ -177,6 +177,11 @@ def clear_temporary_files(model_path: str):
             os.remove(file)
             print(f"==> [Info] Remove temporary file: {file}")
 
+    snapshot_dir = os.path.join(work_dir, "snapshot")
+    if os.path.exists(snapshot_dir):
+        import shutil
+        shutil.rmtree(snapshot_dir)
+
 @dataclass
 class ExportParams:
     model_path: str
@@ -198,8 +203,8 @@ ball_sports_config = ExportParams(
     # model_path="runs/_export/ball_sports/yolov8s_ball_fbvs_448x768_2H_fp32_sparse42_v260203_simplified.onnx",
     # model_path="/data4/yuanchengzhi/projects/ultralytics_fork/runs/multi-head/.experiments/20260205_190521_yolov8s_25kpts_2H/weights/TorchAO/model_torchao_qat.onnx",
     # model_path="runs/_export/ball_sports/yolov11s_ball_fbvs_448x768_2H_fp32_v260206.onnx",
-    model_path="runs/_export/ball_sports/yolov8s_ball_fbvs_448x768_2H_fp32_v260308.onnx",
-    rknn_path="runs/_export/rknn/ball_sports/hybrid/yolov8s_ball_fbvs_448x768_2H_rk3588_hybrid_v260308.rknn",
+    model_path="runs/_export/ball_sports/yolov8s_ball_fbvs_448x768_2H_fp32_v260311.onnx",
+    rknn_path="runs/_export/rknn/ball_sports/hybrid/yolov8s_ball_fbvs_448x768_2H_rk3588_hybrid_v260311.rknn",
     dataset_path="/data4/yuanchengzhi/projects/ultralytics_fork/tools/exporter/rknn_hybrid_quant/dataset2.txt",
     # dataset_path="/data5/yuanchengzhi/Datasets/SmartSports/hybrid_datasets.txt",
     target_platform="rk3588",
@@ -219,7 +224,7 @@ ball_sports_config = ExportParams(
 running_config = ExportParams(
     model_path="runs/_export/running/yolov8s_running_416x640_fp32_v260204.onnx",
     rknn_path="runs/_export/rknn/running/hybrid/yolov8s_running_416x640_rk3576_hybrid_v260204.rknn",
-    dataset_path="/data4/yuanchengzhi/projects/ultralytics_fork/tools/exporter/rknn_hybrid_quant/dataset.txt",
+    dataset_path="/data4/yuanchengzhi/projects/ultralytics_fork/tools/exporter/rknn_hybrid_quant/dataset2.txt",
     target_platform="rk3576",
     custom_hybrid=[
         ['/model.21/cv4.0/cv4.0.0/act/Clip_output_0', 'head_body_52x80'],
