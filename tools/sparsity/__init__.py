@@ -1,5 +1,7 @@
 from typing import List, Optional
 import torch
+
+# Install from: https://github.com/airockchip/rknn-toolkit2/tree/master/autosparsity/packages
 import autosparsity
 
 def sparsity_model(
@@ -29,4 +31,4 @@ def sparsity_model(
     """
 
     # NOTE: More details can refer to https://github.com/NVIDIA/apex/blob/master/apex/contrib/sparsity/
-    return autosparsity.sparsity.sparsity_model(model, optimizer, mode, verbose, whitelist, allowed_layer_names, disallowed_layer_names, fast)
+    autosparsity.sparsity.sparsity_model(model, optimizer, mode, verbose, whitelist, allowed_layer_names, disallowed_layer_names, fast)

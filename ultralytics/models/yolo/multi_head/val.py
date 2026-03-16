@@ -98,18 +98,17 @@ class MultiHeadValidator(DetectionValidator):
         ang_split = list(ang.chunk(self.n_angle_heads, 1))
 
         preds = [_ for _ in range(self.n_heads)]
-        for head_idx in reversed(range(self.n_heads)):
-            curr_head = self.heads[head_idx]
-            if curr_head == "angle":
+        for head_idx, head_type in reversed(list(enumerate(self.heads))):
+            if head_type == "angle":
                 prediction = torch.cat((box_split.pop(), cls_split.pop(), ang_split.pop()), 1)
-            elif curr_head == "pose":
+            elif head_type == "pose":
                 prediction = torch.cat((box_split.pop(), cls_split.pop(), kpt_split.pop()), 1)
-            elif curr_head == "pose-angle":
+            elif head_type == "pose-angle":
                 prediction = torch.cat((box_split.pop(), cls_split.pop(), kpt_split.pop(), ang_split.pop()), 1)
-            elif curr_head == "detect":
+            elif head_type == "detect":
                 prediction = torch.cat((box_split.pop(), cls_split.pop()), 1)
             else:
-                raise ValueError(f"Invalid head: {curr_head}")
+                raise ValueError(f"Invalid head: {head_type}")
 
             nms_ouput = nms.non_max_suppression(
                 prediction,
@@ -122,21 +121,21 @@ class MultiHeadValidator(DetectionValidator):
                 rotated=False,
             )
 
-            if curr_head == "angle":
+            if head_type == "angle":
                 nms_ouput = [
                     {
                         "bboxes": x[:, :4], "conf": x[:, 4], "cls": x[:, 5], 
                         "angles": x[:, 6:]
                     } for x in nms_ouput
                 ]
-            elif curr_head == "pose":
+            elif head_type == "pose":
                 nms_ouput = [
                     {
                         "bboxes": x[:, :4], "conf": x[:, 4], "cls": x[:, 5], 
                         "keypoints": x[:, 6:].view(-1, *self.kpt_shape)
                     } for x in nms_ouput
                 ]
-            elif curr_head == "pose-angle":
+            elif head_type == "pose-angle":
                 nms_ouput = [
                     {
                         "bboxes": x[:, :4], "conf": x[:, 4], "cls": x[:, 5], 
@@ -144,14 +143,14 @@ class MultiHeadValidator(DetectionValidator):
                         "angles": x[:, 6 + self.nk:]
                     } for x in nms_ouput
                 ]
-            elif curr_head == "detect":
+            elif head_type == "detect":
                 nms_ouput = [
                     {
                         "bboxes": x[:, :4], "conf": x[:, 4], "cls": x[:, 5]
                     } for x in nms_ouput
                 ]
             else:
-                raise ValueError(f"Invalid task: {curr_head}")
+                raise ValueError(f"Invalid task: {head_type}")
 
             preds[head_idx] = nms_ouput
         return preds

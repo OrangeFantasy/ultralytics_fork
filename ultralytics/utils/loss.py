@@ -1482,7 +1482,7 @@ class MultiHeadLoss(v8DetectionLoss):
             kpts_sigma_per_head = None
         angles_per_head = list(preds["angles"].chunk(self.n_angle_heads, dim=1))
         
-        for head_idx in reversed(range(self.n_heads)):
+        for head_idx, head_type in reversed(list(enumerate(self.heads))):
             sub_batch = self._select_batch(batch, head_idx)
 
             sub_preds = {
@@ -1491,14 +1491,13 @@ class MultiHeadLoss(v8DetectionLoss):
                 "scores": scores_per_head.pop(),
             }
 
-            curr_head = self.heads[head_idx]
-            if curr_head == "angle":
+            if head_type == "angle":
                 sub_preds["angles"] = angles_per_head.pop()
-            elif curr_head == "pose":
+            elif head_type == "pose":
                 sub_preds["kpts"] = kpts_per_head.pop()
                 if kpts_sigma_per_head is not None:
                     sub_preds["kpts_sigma"] = kpts_sigma_per_head.pop()
-            elif curr_head == "pose-angle":
+            elif head_type == "pose-angle":
                 sub_preds["angles"] = angles_per_head.pop()
                 sub_preds["kpts"] = kpts_per_head.pop()
                 if kpts_sigma_per_head is not None:
@@ -1508,13 +1507,13 @@ class MultiHeadLoss(v8DetectionLoss):
             loss_item[head_idx, 0:3] = sub_loss_item[0:3]  # box, cls, dfl
             loss[head_idx, 0:3] = sub_loss[0:3]
 
-            if curr_head == "angle":
+            if head_type == "angle":
                 loss_item[head_idx, 6] = sub_loss_item[3]  # angle
                 loss[head_idx, 6] = sub_loss[3]
-            elif curr_head == "pose":
+            elif head_type == "pose":
                 loss_item[head_idx, 3:6] = sub_loss_item[3:6]  # pose, kobj, rle
                 loss[head_idx, 3:6] = sub_loss[3:6]
-            elif curr_head == "pose-angle":
+            elif head_type == "pose-angle":
                 loss_item[head_idx, 3:7] = sub_loss_item[3:7]  # pose, kobj, rle, angle
                 loss[head_idx, 3:7] = sub_loss[3:7]
 
@@ -1542,48 +1541,48 @@ class MultiHeadLoss(v8DetectionLoss):
             sub_batch["angles"] = batch["angles"][class_mask]
             sub_batch["keypoints"] = batch["keypoints"][class_mask]
 
-        merge_actions = self.n_heads == 6
+        # merge_actions = self.n_heads == 6
 
-        # Temporarily used to compute v8DetectionLoss with incomplete annotations. For smart classroom.
-        actions_and_face_heads = [2, 3] if merge_actions else [2, 3, 4]
-        match_head = [5] if merge_actions else [6]
+        # # Temporarily used to compute v8DetectionLoss with incomplete annotations. For smart classroom.
+        # actions_and_face_heads = [2, 3] if merge_actions else [2, 3, 4]
+        # match_head = [5] if merge_actions else [6]
 
-        if "extra_props" in batch and (head_idx in actions_and_face_heads):
-            extra_props = batch["extra_props"].to(self.device).view(-1)
-            batch_idx = batch["batch_idx"].to(self.device)
+        # if "extra_props" in batch and (head_idx in actions_and_face_heads):
+        #     extra_props = batch["extra_props"].to(self.device).view(-1)
+        #     batch_idx = batch["batch_idx"].to(self.device)
 
-            mask = (extra_props[..., None] == self._extra_props_invalid_actions_and_face).any(dim=-1)
-            batch_mask = (
-                torch.arange(batch["img"].shape[0], device=self.device)[..., None] != torch.unique(batch_idx[mask])
-            ).all(dim=-1)
-            sub_batch["batch_mask"] = batch_mask
+        #     mask = (extra_props[..., None] == self._extra_props_invalid_actions_and_face).any(dim=-1)
+        #     batch_mask = (
+        #         torch.arange(batch["img"].shape[0], device=self.device)[..., None] != torch.unique(batch_idx[mask])
+        #     ).all(dim=-1)
+        #     sub_batch["batch_mask"] = batch_mask
 
-        elif "extra_props" in batch and (head_idx in match_head):
-            extra_props = batch["extra_props"].to(self.device).view(-1)
-            batch_idx = batch["batch_idx"].to(self.device)
+        # elif "extra_props" in batch and (head_idx in match_head):
+        #     extra_props = batch["extra_props"].to(self.device).view(-1)
+        #     batch_idx = batch["batch_idx"].to(self.device)
 
-            mask = (extra_props[..., None] == self._extra_props_valid_body_with_code).any(dim=-1)
-            batch_mask = (
-                torch.arange(batch["img"].shape[0], device=self.device)[..., None] == torch.unique(batch_idx[mask])
-            ).any(dim=-1)  # select extra_props with 99
-            batch_mask &= torch.tensor([
-                "/train_office/" not in file for file in batch["im_file"]
-            ], dtype=torch.bool, device=self.device)  # ignore /train_office/
-            # if batch_mask.sum() > 0:
-            #     for i in range(batch_mask.shape[0]):
-            #         if batch_mask[i]:
-            #             print(head_idx, batch["im_file"][i])
-            # batch_mask |= torch.tensor([
-            #     "/zhaolixiang/" in file for file in batch["im_file"]
-            # ], dtype=torch.bool, device=self.device)
-            sub_batch["batch_mask"] = batch_mask
+        #     mask = (extra_props[..., None] == self._extra_props_valid_body_with_code).any(dim=-1)
+        #     batch_mask = (
+        #         torch.arange(batch["img"].shape[0], device=self.device)[..., None] == torch.unique(batch_idx[mask])
+        #     ).any(dim=-1)  # select extra_props with 99
+        #     batch_mask &= torch.tensor([
+        #         "/train_office/" not in file for file in batch["im_file"]
+        #     ], dtype=torch.bool, device=self.device)  # ignore /train_office/
+        #     # if batch_mask.sum() > 0:
+        #     #     for i in range(batch_mask.shape[0]):
+        #     #         if batch_mask[i]:
+        #     #             print(head_idx, batch["im_file"][i])
+        #     # batch_mask |= torch.tensor([
+        #     #     "/zhaolixiang/" in file for file in batch["im_file"]
+        #     # ], dtype=torch.bool, device=self.device)
+        #     sub_batch["batch_mask"] = batch_mask
 
         return sub_batch
 
-    @property
-    def _extra_props_invalid_actions_and_face(self):
-        return torch.tensor([98, 99], device=self.device)
+    # @property
+    # def _extra_props_invalid_actions_and_face(self):
+    #     return torch.tensor([98, 99], device=self.device)
 
-    @property
-    def _extra_props_valid_body_with_code(self):
-        return torch.tensor([99], device=self.device)
+    # @property
+    # def _extra_props_valid_body_with_code(self):
+    #     return torch.tensor([99], device=self.device)

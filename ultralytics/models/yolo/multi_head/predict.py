@@ -50,7 +50,7 @@ class MultiHeadPredictor(DetectionPredictor):
         dtype = preds.dtype
 
         preds_postprocessed = []
-        for head_idx, head_type in reversed(enumerate(self.heads)):
+        for head_idx, head_type in reversed(list(enumerate(self.heads))):
             curr_head_preds = [boxes_per_head.pop(), scores_per_head.pop()]
             if head_type == "angle":
                 curr_head_preds += [
