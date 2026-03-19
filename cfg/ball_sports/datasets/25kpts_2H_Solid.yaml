@@ -1,4 +1,4 @@
-path: /data5/yuanchengzhi/Datasets/SmartSports/Balls_Solid # dataset root dir
+path: /data1/yuanchengzhi/Datasets/SmartSports/Balls_Solid # dataset root dir
 train: labels/train.txt # train images (relative to 'path') 39384 images
 val: labels/val.txt # val images (relative to 'path') 15062 images
 

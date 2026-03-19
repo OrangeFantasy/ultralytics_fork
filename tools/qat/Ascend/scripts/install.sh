@@ -1,5 +1,5 @@
 # sudo docker pull ubuntu:18.04
-# sudo docker run --gpus all --shm-size=32g --privileged --name amct -v /data4:/data4 -it amct:3.7.5
+# sudo docker run --gpus all --shm-size=32g --privileged --name amct -v /data1:/data1 -it amct:3.7.5
 
 
 apt-get update

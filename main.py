@@ -29,10 +29,9 @@ def parse_args():
     parser.add_argument("--mode", type=str, default="train", choices=["train", "val"])
 
     parser.add_argument("--nkpts", type=int, default=25)
-    parser.add_argument("--teacher_view", action="store_true", default=False)
     parser.add_argument("--class_ranges", type=str, default=None)
 
-    parser.add_argument("--device", type=str, default="3")
+    parser.add_argument("--device", type=str, default="0")
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch", type=int, default=256)
     parser.add_argument("--workers", type=int, default=8)
@@ -96,7 +95,7 @@ def initlize_global_args(args):
 
         # Used by `ultralytics.data.utils:img2label_paths` to map image paths to label paths: replace `sa` in the image path with `sb`.
         os.environ["__global_args__img2label_paths_sa"] = "zhaolixiang/dataset/teacher_view_dataset/trainval/images"
-        os.environ["__global_args__img2label_paths_sb"] = "yuanchengzhi/datasets/teacher_view_dataset/trainval/labels"
+        os.environ["__global_args__img2label_paths_sb"] = "yuanchengzhi/Datasets/SmartClassroom/Teacher/labels"
     elif args.nkpts == 19:
         loss.OKS_SIGMA = _OKS_SIGMA[args.nkpts]
         os.environ["__global_args__oks_sigma"] = np.array2string(loss.OKS_SIGMA)
@@ -107,7 +106,7 @@ def initlize_global_args(args):
             raise ex
         os.environ["__global_args__multi_head_class_ranges"] = np.array2string(class_ranges.reshape(-1))
         os.environ["__global_args__img2label_paths_sa"] = "zhaolixiang/dataset/multi_task_dataset/trainval/trainval_multi_task_with_action_labels/images"
-        os.environ["__global_args__img2label_paths_sb"] = "yuanchengzhi/datasets/SmartClassroom/StandUp_remarked/labels"
+        os.environ["__global_args__img2label_paths_sb"] = "yuanchengzhi/Datasets/SmartClassroom/Student/labels"
     elif args.nkpts == 25:
         loss.OKS_SIGMA = _OKS_SIGMA[args.nkpts]
         os.environ["__global_args__oks_sigma"] = np.array2string(loss.OKS_SIGMA)
@@ -212,13 +211,15 @@ def override_debug_params(args):
     ball_sports_args = {
         # "model": "cfg/ball_sports/models/yolov8s_25kpts_2H.yaml",
         "model": "runs/multi-head/train/20260308_060807_best/weights/best.pt",
-        "data": "cfg/ball_sports/datasets/25kpts_2H_PersonBodyHead.yaml",
+        "data": "cfg/ball_sports/datasets/25kpts_2H_Solid.yaml",
         "nkpts": 25,
         "act": "relu6",
-        "device": "2",
+        "device": "0",
         "override_hyp": ast.literal_eval(r"{ 'plots': False, 'scale': 0.6, 'albumentations': 1.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'cls': 1.0 ,'kobj': 0.25, 'rle': 0.5 }"),
         "sparse": False,
         "sparse_mode": 2,
+        "workers": 2,
+        "project": ".experiments",
     }
     running_args = {
         "model": "cfg/running/models/yolov8s-25-poseAngles-m.yaml",
@@ -232,7 +233,17 @@ def override_debug_params(args):
         "sparse_mode": 0,
         "epochs": 1,
     }
-    args.__dict__.update(ball_sports_args)
+    teacher_args = {
+        "model": "cfg/classroom/models/yolov8s-17kpts_Teacher.yaml",
+        "data": "cfg/classroom/datasets/17kpts_Teacher.yaml",
+        "nkpts": 17,
+        "act": "relu6",
+        "device": "5",
+        "override_hyp": ast.literal_eval(r"{ 'scale': 0.6, 'albumentations': 0.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'rle': 0.75 }"),
+        "workers": 2,
+        "project": ".experiments",    
+    }
+    args.__dict__.update(teacher_args)
     args.__dict__.update({
         "project": ".experiments"
     })

@@ -1788,8 +1788,6 @@ class v10Detect(Detect):
 
 class MultiHead(Pose26):
     rle = True
-    export_function = None
-    quantization_function = None
 
     def __init__(
         self, 

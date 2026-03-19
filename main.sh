@@ -128,13 +128,13 @@ python main.py \
     --override_hyp "{ 'scale': 0.6, 'fliplr': 0.0, 'albumentations': 0.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'rle': 0.75 }" \
     --workers 8 --logging tensorboard --project qrcode
 
-python main.py \
-    --model cfg/qrcode/models/yolov8s_19kpts.yaml \
-    --pretrained runs/multi-head/qrcode/20260202_201603_yolov8s_19kpts_MergeRaiseHandAndStandUp/weights/best.fp16.state_dict.pt \
-    --data cfg/qrcode/datasets/19kpts.yaml --mode train --nkpts 19 --class_ranges "[[0, 0], [1, 5], [2, 5], [6, 6], [7, 10], [11, 11]]" \
-    --device 2 --epochs 100 --batch 256 --imgsz 448 768 --act relu6 \
-    --override_hyp "{ 'scale': 0.6, 'fliplr': 0.0, 'albumentations': 0.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'rle': 0.75 }" \
-    --workers 8 --logging tensorboard --project qrcode
+# python main.py \
+#     --model cfg/qrcode/models/yolov8s_19kpts.yaml \
+#     --pretrained runs/multi-head/qrcode/20260202_201603_yolov8s_19kpts_MergeRaiseHandAndStandUp/weights/best.fp16.state_dict.pt \
+#     --data cfg/qrcode/datasets/19kpts.yaml --mode train --nkpts 19 --class_ranges "[[0, 0], [1, 5], [2, 5], [6, 6], [7, 10], [11, 11]]" \
+#     --device 2 --epochs 100 --batch 256 --imgsz 448 768 --act relu6 \
+#     --override_hyp "{ 'scale': 0.6, 'fliplr': 0.0, 'albumentations': 0.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'rle': 0.75 }" \
+#     --workers 8 --logging tensorboard --project qrcode
 
 
 
@@ -189,6 +189,15 @@ python main_qat.py \
     --device 2 --epoch 10 --batch 128 --imgsz 448 768 --act relu6 \
     --override_hyp "{ 'scale': 0.6, 'fliplr': 0.0, 'albumentations': 0.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'rle': 0.75 }" \
     --workers 0 --logging tensorboard
+
+
+python main_qat.py \
+    --platform ascend --model "../cfg/classroom/models/yolov8s-17kpts_Teacher.yaml" \
+    --pretrained "../runs/multi-head/classroom/20260313_133533_yolov8s-17kpts_Teacher/weights/best.pt" \
+    --data "../cfg/classroom/datasets/17kpts_Teacher.yaml" --mode train --nkpts 17 \
+    --device 0 --epoch 10 --batch 128 --imgsz 448 768 --act relu6 \
+    --override_hyp "{ 'scale': 0.6, 'fliplr': 0.0, 'albumentations': 0.0, 'mosaic': 0.0, 'box': 10.0, 'dfl': 2.0, 'rle': 0.75 }" \
+    --workers 0 --logging tensorboard --project .experments
 
 python main_qat.py \
     --platform sophgo --model "cfg/classroom/models/yolov8s-17kpts_Teacher.yaml" \

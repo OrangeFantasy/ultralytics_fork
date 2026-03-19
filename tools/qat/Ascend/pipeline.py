@@ -129,15 +129,43 @@ def save_quant_retrain_model(
     return amct_pytorch.save_quant_retrain_model(config_file, model, record_file, save_path,  input_data, input_names, output_names, dynamic_axes)
 
 class Ascend_Pipeline(QAT_Pipeline):
-    _default_config_file: str = os.path.join("runs/.amct_cache", "config.json")
-    _defualt_record_file: str = os.path.join("runs/.amct_cache", "record.txt")
+    _default_cache_dir: str = ".amct_cache"
+    _default_config_file: str = os.path.join(_default_cache_dir, "config.json")
+    _defualt_record_file: str = os.path.join(_default_cache_dir, "record.txt")
+
+    _runs_dir: str = "runs"
+    _amct_log_dir: str = "amct_log"
+
+    @staticmethod
+    def chmod_777(path: str):
+        def _try_chmod(p: str):
+            try:
+                os.chmod(p, 0o777)
+                print(f"[Ascend] Modified permissions (777): {p}")
+            except Exception as e:
+                print(f"[Ascend] Failed to modify permissions: {p}, {e}")
+
+        for root, dirs, files in os.walk(path):
+            for d in dirs:
+                dir_path = os.path.join(root, d)
+                _try_chmod(dir_path)
+            for f in files:
+                file_path = os.path.join(root, f)
+                _try_chmod(file_path)
+
+        _try_chmod(path)
+
+    def set_permissions_777(self):
+        self.chmod_777(self._default_cache_dir)
+        self.chmod_777(self._runs_dir)
+        self.chmod_777(self._amct_log_dir)
 
     def initialize_env(
         self, 
         **ignore_kwargs
     ):
-        if not os.path.exists("runs/.amct_cache"):
-            os.makedirs("runs/.amct_cache", mode=777)
+        if not os.path.exists(self._default_cache_dir):
+            os.makedirs(self._default_cache_dir, mode=777)
 
         patch_for_fx_tracing()
 
@@ -161,6 +189,7 @@ class Ascend_Pipeline(QAT_Pipeline):
             print("==> [AMCT] create_quant_retrain_config ...")
             model_fp.train()
             create_quant_retrain_config(config_file, model_fp, dummy_input, config_defination=None)
+            self.set_permissions_777()
             print(f"==> Retrain config has been saved to {config_file}. Make sure and then restart the training.")
             exit()
 
@@ -203,4 +232,5 @@ class Ascend_Pipeline(QAT_Pipeline):
         save_quant_retrain_model(
             self._default_config_file, model_qat.eval(), self._defualt_record_file, f"{save_path}/AMCT", dummy_input, input_names, output_names, dynamic_axes
         )
+        self.set_permissions_777()
         print(f"==> [AMCT] save_quant_retrain_model to {save_path}")

@@ -36,6 +36,8 @@ class MultiHeadTrainer(yolo.detect.DetectionTrainer):
             torchsummaryX.summary(deepcopy(model).float(), dummay_input)
         except ImportError:
             print("==> torchsummaryX not found, install with `pip install torchsummaryX`")
+        except Exception as e:
+            LOGGER.info(f"torchsummaryX error: {e}")
 
         with open(self.wdir / "model_arch.txt", "w") as f:
             f.write(str(unwrap_model(model)))
