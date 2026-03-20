@@ -87,7 +87,13 @@ class PyTorchBackend(BaseBackend):
         Returns:
             (torch.Tensor | list[torch.Tensor]): Model predictions as tensor(s).
         """
-        return self.model(im, augment=augment, visualize=visualize, embed=embed, **kwargs)
+        import inspect
+        params = dict(inspect.signature(self.model.forward).parameters)
+        forward_kwargs = { }
+        for k, v in { "augment": augment, "visualize": visualize, "embed": embed, **kwargs }.items():
+            if k in params:
+                forward_kwargs[k] = v
+        return self.model(im, **forward_kwargs)
 
 
 class TorchScriptBackend(BaseBackend):

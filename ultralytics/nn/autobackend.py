@@ -269,13 +269,7 @@ class AutoBackend(nn.Module):
         # Build forward kwargs based on backend type
         forward_kwargs = {}
         if self.format == "pt":
-            params = dict(inspect.signature(self.backend.model.forward).parameters)
-            if "args" in params or "kwargs" in params:
-                forward_kwargs = {"augment": augment, "visualize": visualize, "embed": embed, **kwargs}
-            else:
-                for k, v in { "augment": augment, "visualize": visualize, "embed": embed, **kwargs }.items():
-                    if k in params:
-                        forward_kwargs[k] = v
+            forward_kwargs = {"augment": augment, "visualize": visualize, "embed": embed, **kwargs}
 
         y = self.backend.forward(im, **forward_kwargs)
 
